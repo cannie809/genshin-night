@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" font-family="'Segoe UI',system-ui,sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a0a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2d1b4e;stop-opacity:0.9"/>
+      <stop offset="100%" style="stop-color:#1a0a2e;stop-opacity:0.9"/>
+    </linearGradient>
+    <linearGradient id="llm" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#6d28d9"/>
+      <stop offset="100%" style="stop-color:#4c1d95"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrowRight" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#c084fc"/>
+    </marker>
+  </defs>
+  <!-- Background -->
+  <rect width="800" height="320" rx="16" fill="url(#bg)"/>
+  <rect width="800" height="320" rx="16" fill="none" stroke="#a78bfa" stroke-opacity="0.2" stroke-width="1"/>
+  <!-- Title -->
+  <text x="400" y="38" text-anchor="middle" fill="#e9d5ff" font-size="16" font-weight="600" letter-spacing="2">SINGLE AGENT · MEMORY ISOLATION</text>
+  <!-- Player memory cards (left) -->
+  <g transform="translate(60,60)">
+    <rect width="200" height="56" rx="10" fill="url(#card)" stroke="#a78bfa" stroke-opacity="0.4"/>
+    <text x="16" y="24" fill="#fbbf24" font-size="20">🌸</text>
+    <text x="44" y="27" fill="#e9d5ff" font-size="14" font-weight="500">胡桃的记忆</text>
+    <text x="16" y="46" fill="#a78bfa" font-size="11" opacity="0.7">personality + knowledge + events</text>
+  </g>
+  <g transform="translate(60,135)">
+    <rect width="200" height="56" rx="10" fill="url(#card)" stroke="#a78bfa" stroke-opacity="0.4"/>
+    <text x="16" y="24" fill="#93c5fd" font-size="20">🎵</text>
+    <text x="44" y="27" fill="#e9d5ff" font-size="14" font-weight="500">温迪的记忆</text>
+    <text x="16" y="46" fill="#a78bfa" font-size="11" opacity="0.7">personality + knowledge + events</text>
+  </g>
+  <g transform="translate(60,210)">
+    <rect width="200" height="56" rx="10" fill="url(#card)" stroke="#a78bfa" stroke-opacity="0.4"/>
+    <text x="16" y="24" fill="#fca5a5" font-size="20">🪙</text>
+    <text x="44" y="27" fill="#e9d5ff" font-size="14" font-weight="500">钟离的记忆</text>
+    <text x="16" y="46" fill="#a78bfa" font-size="11" opacity="0.7">personality + knowledge + events</text>
+  </g>
+  <!-- Left arrows (memory → LLM) -->
+  <g filter="url(#glow)">
+    <line x1="270" y1="88" x2="342" y2="145" stroke="#a78bfa" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowRight)"/>
+    <line x1="270" y1="163" x2="342" y2="163" stroke="#a78bfa" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowRight)"/>
+    <line x1="270" y1="238" x2="342" y2="181" stroke="#a78bfa" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowRight)"/>
+  </g>
+  <!-- LLM box (center) -->
+  <g transform="translate(345,110)">
+    <rect width="140" height="106" rx="14" fill="url(#llm)" filter="url(#glow)"/>
+    <rect width="140" height="106" rx="14" fill="none" stroke="#c084fc" stroke-opacity="0.6"/>
+    <text x="70" y="38" text-anchor="middle" fill="#fff" font-size="28">🧠</text>
+    <text x="70" y="62" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">同一个 LLM</text>
+    <text x="70" y="82" text-anchor="middle" fill="#e9d5ff" font-size="11" opacity="0.8">Qwen / GPT / ...</text>
+  </g>
+  <!-- Right arrows (LLM → output) -->
+  <g filter="url(#glow)">
+    <line x1="488" y1="145" x2="552" y2="88" stroke="#a78bfa" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowRight)"/>
+    <line x1="488" y1="163" x2="552" y2="163" stroke="#a78bfa" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowRight)"/>
+    <line x1="488" y1="181" x2="552" y2="238" stroke="#a78bfa" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowRight)"/>
+  </g>
+  <!-- Output cards (right) -->
+  <g transform="translate(555,60)">
+    <rect width="185" height="56" rx="10" fill="url(#card)" stroke="#fbbf24" stroke-opacity="0.4"/>
+    <text x="16" y="27" fill="#fbbf24" font-size="14" font-weight="500">🌸 胡桃的发言</text>
+    <text x="16" y="46" fill="#a78bfa" font-size="11" opacity="0.7">"哎呀，这位仙人怎么…"</text>
+  </g>
+  <g transform="translate(555,135)">
+    <rect width="185" height="56" rx="10" fill="url(#card)" stroke="#93c5fd" stroke-opacity="0.4"/>
+    <text x="16" y="27" fill="#93c5fd" font-size="14" font-weight="500">🎵 温迪的投票</text>
+    <text x="16" y="46" fill="#a78bfa" font-size="11" opacity="0.7">"风会带来真相的～"</text>
+  </g>
+  <g transform="translate(555,210)">
+    <rect width="185" height="56" rx="10" fill="url(#card)" stroke="#fca5a5" stroke-opacity="0.4"/>
+    <text x="16" y="27" fill="#fca5a5" font-size="14" font-weight="500">🪙 钟离的决策</text>
+    <text x="16" y="46" fill="#a78bfa" font-size="11" opacity="0.7">"以岩王帝君之名…"</text>
+  </g>
+  <!-- Bottom label -->
+  <text x="400" y="302" text-anchor="middle" fill="#a78bfa" font-size="12" opacity="0.6">每个玩家看到不同的记忆上下文 → 同一模型产出差异化行为</text>
+</svg>

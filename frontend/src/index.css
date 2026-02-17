@@ -1,0 +1,258 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Cinzel", "Times New Roman", serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Role-specific colors */
+  --color-werewolf: #dc2626;
+  --color-seer: #a855f7;
+  --color-witch: #10b981;
+  --color-hunter: #f59e0b;
+  --color-villager: #3b82f6;
+
+  /* Phase colors */
+  --color-night: #1e1b4b;
+  --color-day: #78350f;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  /* Werewolf Dark Theme */
+  --background: #0a0a12;
+  --foreground: #e2e8f0;
+
+  --card: #13132a;
+  --card-foreground: #e2e8f0;
+
+  --popover: #13132a;
+  --popover-foreground: #e2e8f0;
+
+  --primary: #9b1c1c;
+  --primary-foreground: #fde8e8;
+
+  --secondary: #2d1f6e;
+  --secondary-foreground: #ede9fe;
+
+  --muted: #1a1a2e;
+  --muted-foreground: #94a3b8;
+
+  --accent: #7c3aed;
+  --accent-foreground: #f5f3ff;
+
+  --destructive: #dc2626;
+  --destructive-foreground: #fef2f2;
+
+  --border: #1f1f3a;
+  --input: #1f1f3a;
+  --ring: #7c3aed;
+}
+
+/* Base styles */
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a2a4a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a5a;
+}
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-message-in {
+  animation: message-in 0.35s ease-out both;
+}
+
+.animate-shimmer {
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+/* Phase transition animations */
+@keyframes moon-rise {
+  from {
+    opacity: 0;
+    transform: translateY(80px) scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes sun-rise {
+  from {
+    opacity: 0;
+    transform: translateY(80px) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes sun-rays-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+
+/* Sticker bubble: iMessage-style diagonal pop → hold → fade */
+@keyframes sticker-pop {
+  /* Start from origin (bottom-left), tiny */
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  /* Quick overshoot */
+  18% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  /* Settle back */
+  28% {
+    transform: scale(0.96);
+  }
+  /* Rest */
+  35%, 80% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  /* Fade out */
+  100% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+.animate-sticker-pop {
+  transform-origin: bottom left;
+  animation: sticker-pop 4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* === Genshin-themed Landing Page === */
+@keyframes avatar-float {
+  0%, 100% { transform: translateY(var(--float-y, 0px)); }
+  50% { transform: translateY(calc(var(--float-y, 0px) - 8px)); }
+}
+
+@keyframes drift-up {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  10% { opacity: 0.7; }
+  85% { opacity: 0.2; }
+  100% { transform: translateY(-35vh) translateX(12px); opacity: 0; }
+}
+
+@keyframes title-glow {
+  0%, 100% { text-shadow: 0 0 20px rgba(212, 165, 116, 0.2); }
+  50% { text-shadow: 0 0 30px rgba(212, 165, 116, 0.4), 0 0 60px rgba(212, 165, 116, 0.1); }
+}
+
+.animate-avatar-float {
+  animation: avatar-float 3.5s ease-in-out infinite;
+}
+
+.animate-title-glow {
+  animation: title-glow 4s ease-in-out infinite;
+}

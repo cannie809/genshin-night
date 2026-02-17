@@ -1,0 +1,38 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Test cache
+.pytest_cache/
+
+# Environment files with secrets
+.env
+.env.local
+**/.env.local
+
+# MCP config (may contain API keys)
+.mcp.json
+
+# Claude files
+.claude/
+.claudeignore
+CLAUDE.md
+
+# Git worktrees (managed by git, not tracked as subdirs)
+tasks/
+
+# Game data (runtime memory files)
+backend/.memory*/
+*.log
+
+# Frontend build artifacts
+frontend/dist/
+frontend/node_modules/
+frontend/.vite/

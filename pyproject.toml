@@ -1,0 +1,12 @@
+[project]
+name = "genshin-night"
+version = "2.0.0"
+description = "原神 × 狼人杀 — AI 驱动的桌游，单 LLM 实例 + 记忆隔离驱动多角色博弈"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = ["fastapi",
+    "uvicorn",
+    "openai",
+    "python-dotenv",
+    "pydantic>=2.0",
+]
