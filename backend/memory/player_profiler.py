@@ -17,7 +17,7 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 # Keep this many most recent game directories
-KEEP_RECENT_GAMES = 10
+KEEP_RECENT_GAMES = 20
 
 # Perspective matrix: (human_role_side) -> [teammate_perspective, opponent_perspective]
 # Win/loss no longer splits perspective type — it's embedded in the prompt wording instead.

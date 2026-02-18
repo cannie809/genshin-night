@@ -1,6 +1,10 @@
 import { GameBoard } from './components/GameBoard'
+import { AccessKeyGate } from './components/AccessKeyGate'
+import { useGameStore } from './store/gameStore'
 
 function App() {
+  const { accessKey } = useGameStore();
+
   return (
     <div className="min-h-screen bg-background text-foreground relative overflow-hidden">
       {/* Atmospheric background gradient */}
@@ -8,7 +12,7 @@ function App() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_#1a0000_0%,_transparent_40%)]" />
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top_left,_#1a1400_0%,_transparent_30%)]" />
       <div className="relative z-10">
-        <GameBoard />
+        {accessKey ? <GameBoard /> : <AccessKeyGate />}
       </div>
     </div>
   )

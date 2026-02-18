@@ -28,11 +28,17 @@ interface GameStore {
   // Active sticker bubbles displayed on PlayerCards
   activeStickerBubbles: StickerBubble[];
 
+  // Access key authentication
+  accessKey: string | null;
+  playerName: string | null;
+
   // Last game config (persists across games for "play again")
   lastMode: string;
   lastPreferredRole: string | null;
 
   // Actions
+  setAccessKey: (key: string | null) => void;
+  setPlayerName: (name: string | null) => void;
   setGameState: (state: GameState) => void;
   setPlayerId: (playerId: string) => void;
   setAllEventsRevealed: (val: boolean) => void;
@@ -51,8 +57,20 @@ export const useGameStore = create<GameStore>((set) => ({
   playerGuesses: {},
   phaseTransition: null,
   activeStickerBubbles: [],
+  accessKey: localStorage.getItem('genshin_access_key'),
+  playerName: null,
   lastMode: 'classic_6_witch',
   lastPreferredRole: null,
+
+  setAccessKey: (key) => {
+    if (key) {
+      localStorage.setItem('genshin_access_key', key);
+    } else {
+      localStorage.removeItem('genshin_access_key');
+    }
+    set({ accessKey: key });
+  },
+  setPlayerName: (playerName) => set({ playerName }),
 
   setGameState: (gameState) => set({ gameState }),
 

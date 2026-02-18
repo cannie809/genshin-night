@@ -13,10 +13,10 @@ from typing import Optional
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 # Setup logging
@@ -46,6 +46,40 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+import json as _json
+
+_raw_keys = os.getenv("PLAYER_KEYS", "{}")
+try:
+    _PLAYER_KEYS: dict[str, str] = _json.loads(_raw_keys)  # {name: key}
+    _KEY_TO_PLAYER: dict[str, str] = {v: k for k, v in _PLAYER_KEYS.items()}  # {key: name}
+except Exception:
+    _PLAYER_KEYS = {}
+    _KEY_TO_PLAYER = {}
+
+
+@app.middleware("http")
+async def verify_access_key(request: Request, call_next):
+    # Skip auth for health check, characters listing, static files, and OPTIONS
+    if request.url.path in ("/api/health", "/api/characters") or request.method == "OPTIONS":
+        return await call_next(request)
+    # Skip auth for static files (frontend assets)
+    if not request.url.path.startswith("/api/"):
+        return await call_next(request)
+    # Skip auth if no keys configured (local dev)
+    if not _PLAYER_KEYS:
+        request.state.player_name = "local"
+        return await call_next(request)
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return JSONResponse(status_code=401, content={"detail": "Missing access key"})
+    key = auth[7:]
+    player_name = _KEY_TO_PLAYER.get(key)
+    if not player_name:
+        return JSONResponse(status_code=401, content={"detail": "Invalid access key"})
+    request.state.player_name = player_name
+    return await call_next(request)
+
 
 # Global game state storage (in-memory for MVP)
 # In production, use Redis or database
@@ -346,8 +380,13 @@ async def list_characters():
     ]
 
 
+@app.post("/api/verify-key")
+async def verify_key(request: Request):
+    return {"status": "ok", "player_name": request.state.player_name}
+
+
 @app.post("/api/game/start", response_model=GameStateResponse)
-async def start_game(config: GameConfig):
+async def start_game(config: GameConfig, request: Request):
     """Start a new game.
 
     Args:
@@ -361,8 +400,12 @@ async def start_game(config: GameConfig):
         for gid in list(games.keys()):
             prefetch.invalidate(gid)
 
-        # Create new game
-        game = game_engine.create_game(mode=config.mode, preferred_role=config.preferred_role)
+        # Create new game (player-scoped memory isolation)
+        game = game_engine.create_game(
+            mode=config.mode,
+            preferred_role=config.preferred_role,
+            human_identity=request.state.player_name,
+        )
 
         # Store in memory
         games[game.game_id] = game
@@ -670,6 +713,7 @@ async def wolf_discuss(req: SpeechRequest):
                 suggestion, kill_reason, my_plan, teammate_suggestion = cached
             else:
                 # Fallback: compute synchronously
+                log.warning("[WolfDiscuss] Prefetch miss, computing synchronously")
                 computed = _compute_wolf_discuss_sync(game)
                 if computed:
                     suggestion, kill_reason, my_plan, teammate_suggestion = computed
@@ -734,7 +778,7 @@ async def wolf_discuss(req: SpeechRequest):
 
             # Update shared memory
             from backend.memory import KnowledgeManager
-            km = KnowledgeManager(MEMORY_BASE, game.game_id)
+            km = KnowledgeManager(game.memory_base, game.game_id)
             strategy_entry = f"\n### 第{game.round_number}轮\n"
             strategy_entry += f"- **{ai_wolf.name}建议击杀**: {suggestion}（{kill_reason}）\n"
             if my_plan:
@@ -802,7 +846,7 @@ async def wolf_human_speak(req: WolfSpeakRequest):
 
     # Update shared memory with human's instructions
     from backend.memory import KnowledgeManager, MemoryStorage
-    km = KnowledgeManager(MEMORY_BASE, game.game_id)
+    km = KnowledgeManager(game.memory_base, game.game_id)
     km.update_werewolf_strategy(f"- **{human.name}指示**: {content}\n")
 
     # AI wolf reconsiders after hearing human's input
@@ -965,7 +1009,7 @@ def _compute_wolf_discuss_sync(game: GameState) -> tuple[str, str, str, str] | N
         return None
 
     from backend.memory import KnowledgeManager, MemoryStorage
-    km = KnowledgeManager(MEMORY_BASE, game.game_id)
+    km = KnowledgeManager(game.memory_base, game.game_id)
     shared_mem = km.read_werewolf_shared()
     strategy_ctx = shared_mem.get("strategy", "暂无")[:400]
     threats_ctx = json.dumps(shared_mem.get("threats", {}).get("threats", {}), ensure_ascii=False)
@@ -973,7 +1017,7 @@ def _compute_wolf_discuss_sync(game: GameState) -> tuple[str, str, str, str] | N
     target_list = "、".join(targets)
     alive_all = "、".join(p.name for p in game.alive_players)
 
-    wolf_storage = MemoryStorage(ai_wolf.id, MEMORY_BASE, game.game_id)
+    wolf_storage = MemoryStorage(ai_wolf.id, game.memory_base, game.game_id)
     wolf_profile = wolf_storage.read_profile_personality()
     profile_snippet = wolf_profile[:300] if wolf_profile else ""
 
@@ -1906,6 +1950,7 @@ async def advance_night(req: SpeechRequest):
         else:
             # Cancel any still-running night prefetch to prevent concurrent state modification
             prefetch.invalidate(game.game_id)
+            log.warning("[AdvanceNight] Prefetch miss, running night actions synchronously")
 
             # Fallback: run night actions synchronously (original logic)
             max_iterations = 10
@@ -2068,7 +2113,7 @@ async def advance_night(req: SpeechRequest):
                 # Distill human player behavior profile
                 try:
                     from backend.memory.player_profiler import PlayerProfiler
-                    profiler = PlayerProfiler(MEMORY_BASE)
+                    profiler = PlayerProfiler(game.memory_base)
                     try:
                         human_role = next((p.role for p in game.players if p.is_human), None)
                         result = profiler.distill_game(
@@ -2158,8 +2203,9 @@ if FRONTEND_DIST.exists():
 
 
 if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8000))
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8000,
+        port=port,
     )
