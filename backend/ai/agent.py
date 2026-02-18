@@ -77,6 +77,10 @@ class UnifiedGameAgent:
         else:  # openai
             self.model = os.getenv("LLM_MODEL", "gpt-4o-mini")
 
+    def _mb(self, game_state: "GameState") -> Path:
+        """Return player-scoped memory base from game_state, falling back to root."""
+        return game_state.memory_base or self.memory_base
+
     def _initialize_llm_client(self) -> OpenAI:
         """Initialize OpenAI-compatible LLM client.
 
@@ -194,8 +198,8 @@ class UnifiedGameAgent:
             Dict with all memory types
         """
         # Get game-specific managers
-        knowledge_manager = KnowledgeManager(self.memory_base, game_state.game_id)
-        storage = MemoryStorage(player.id, self.memory_base, game_state.game_id)
+        knowledge_manager = KnowledgeManager(self._mb(game_state), game_state.game_id)
+        storage = MemoryStorage(player.id, self._mb(game_state), game_state.game_id)
 
         # Read player's own memories
         memories = {
@@ -211,11 +215,11 @@ class UnifiedGameAgent:
             memories["shared"] = knowledge_manager.read_werewolf_shared()
 
         # Load event index key facts
-        event_index = EventIndexManager(self.memory_base, game_state.game_id)
+        event_index = EventIndexManager(self._mb(game_state), game_state.game_id)
         memories["event_index_facts"] = event_index.get_key_facts(viewer_role=player.role)
 
         # Load high-value strategy items
-        meta_path = self.memory_base / game_state.game_id / player.id / "knowledge" / "role" / player.role / "strategy_meta.json"
+        meta_path = self._mb(game_state) / game_state.game_id / player.id / "knowledge" / "role" / player.role / "strategy_meta.json"
         if meta_path.exists():
             tracker = StrategyTracker(meta_path)
             high_items = tracker.get_high_value_items(min_helpful=2)
@@ -236,7 +240,7 @@ class UnifiedGameAgent:
             memories["high_value_insights"] = ""
 
         # Load last reflection strategy shift
-        reflection_dir = self.memory_base / game_state.game_id / player.id / "reflections"
+        reflection_dir = self._mb(game_state) / game_state.game_id / player.id / "reflections"
         if reflection_dir.exists():
             reflection_files = sorted(reflection_dir.glob("round_*_reflection.md"))
             if reflection_files:
@@ -254,7 +258,7 @@ class UnifiedGameAgent:
             memories["last_reflection_shift"] = ""
 
         # Load human player behavior profile (PlayerProfiler)
-        profiler = PlayerProfiler(self.memory_base)
+        profiler = PlayerProfiler(self._mb(game_state))
         try:
             phase = {1: "early", 2: "mid"}.get(game_state.round_number, "late")
             observations = profiler.query_observations(
@@ -281,7 +285,7 @@ class UnifiedGameAgent:
 
     def _save_debug_log(
         self,
-        game_id: str,
+        game_state: "GameState",
         player_id: str,
         round_num: int,
         action: str,
@@ -290,10 +294,10 @@ class UnifiedGameAgent:
         content: str,
         system_prompt: str = "",
     ) -> None:
-        """Save prompt/response debug log to .memory/{game_id}/{player_id}/debug/.
+        """Save prompt/response debug log to .memory/{player}/{game_id}/{player_id}/debug/.
 
         Args:
-            game_id: Current game ID
+            game_state: Current game state (provides game_id and memory_base)
             player_id: Player ID (folder owner)
             round_num: Current round number
             action: Action type (speech, vote, wolf_collab, seer, witch, hunter)
@@ -303,7 +307,8 @@ class UnifiedGameAgent:
             system_prompt: System prompt (only for log_type="prompt")
         """
         try:
-            debug_dir = self.memory_base / game_id / player_id / "debug"
+            mb = self._mb(game_state)
+            debug_dir = mb / game_state.game_id / player_id / "debug"
             debug_dir.mkdir(parents=True, exist_ok=True)
             filename = f"{action}_round{round_num}_attempt{attempt}_{log_type}.txt"
             if log_type == "prompt" and system_prompt:
@@ -421,7 +426,7 @@ class UnifiedGameAgent:
         wolf1, wolf2 = wolves[0], wolves[1]
 
         # Get game-specific knowledge manager
-        knowledge_manager = KnowledgeManager(self.memory_base, game_state.game_id)
+        knowledge_manager = KnowledgeManager(self._mb(game_state), game_state.game_id)
 
         wolf1_mem = self._load_player_memories(wolf1, game_state)
         wolf2_mem = self._load_player_memories(wolf2, game_state)
@@ -439,13 +444,13 @@ class UnifiedGameAgent:
         # Try up to 2 attempts with JSON validation
         result = None
         for attempt in range(2):
-            self._save_debug_log(game_state.game_id, wolf1.id, game_state.round_number,
+            self._save_debug_log(game_state, wolf1.id, game_state.round_number,
                                  "wolf_collab", attempt + 1, "prompt", user_prompt, system_prompt)
             response = self._llm_call(
                 user_prompt, max_tokens=800, temperature=0.5,
                 system_prompt=system_prompt,
             )
-            self._save_debug_log(game_state.game_id, wolf1.id, game_state.round_number,
+            self._save_debug_log(game_state, wolf1.id, game_state.round_number,
                                  "wolf_collab", attempt + 1, "response", response)
             result = parse_json_response(
                 response,
@@ -458,6 +463,7 @@ class UnifiedGameAgent:
 
         if not result:
             # All attempts failed — fallback
+            log.error("[WolfCollab] All LLM attempts failed, using random fallback")
             targets = alive_targets
             return {"target": random.choice(targets) if targets else None}
 
@@ -563,7 +569,7 @@ class UnifiedGameAgent:
             {"reply": AI's reply (str or None), "final_target": new target name}
             Falls back to parsing human message for target name on LLM failure.
         """
-        wolf_storage = MemoryStorage(ai_wolf.id, self.memory_base, game_state.game_id)
+        wolf_storage = MemoryStorage(ai_wolf.id, self._mb(game_state), game_state.game_id)
         wolf_profile = wolf_storage.read_profile_personality()
         profile_snippet = (wolf_profile[:150] if wolf_profile else "")
 
@@ -587,7 +593,7 @@ class UnifiedGameAgent:
 
         # Determine attempt number
         try:
-            dbg_dir = self.memory_base / game_state.game_id / ai_wolf.id / "debug"
+            dbg_dir = self._mb(game_state) / game_state.game_id / ai_wolf.id / "debug"
             rc_count = len(list(dbg_dir.glob(
                 f"wolf_reconsider_round{game_state.round_number}_*_prompt.txt"
             ))) if dbg_dir.exists() else 0
@@ -595,10 +601,10 @@ class UnifiedGameAgent:
         except Exception:
             rc_attempt = 1
 
-        self._save_debug_log(game_state.game_id, ai_wolf.id, game_state.round_number,
+        self._save_debug_log(game_state, ai_wolf.id, game_state.round_number,
                              "wolf_reconsider", rc_attempt, "prompt", prompt)
         response = self._llm_call(prompt, max_tokens=150)
-        self._save_debug_log(game_state.game_id, ai_wolf.id, game_state.round_number,
+        self._save_debug_log(game_state, ai_wolf.id, game_state.round_number,
                              "wolf_reconsider", rc_attempt, "response", response)
 
         result = parse_json_response(
@@ -635,10 +641,10 @@ class UnifiedGameAgent:
         memories = self._load_player_memories(seer, game_state)
         prompt = get_seer_check_prompt(seer, memories, game_state)
 
-        self._save_debug_log(game_state.game_id, seer.id, game_state.round_number,
+        self._save_debug_log(game_state, seer.id, game_state.round_number,
                              "seer", 1, "prompt", prompt)
         response = self._llm_call(prompt, max_tokens=400)
-        self._save_debug_log(game_state.game_id, seer.id, game_state.round_number,
+        self._save_debug_log(game_state, seer.id, game_state.round_number,
                              "seer", 1, "response", response)
 
         # Extract player name from <target> tag, fallback to raw response
@@ -647,7 +653,7 @@ class UnifiedGameAgent:
         response = response.strip('"').strip("'")
 
         # Build set of already-investigated names from knowledge
-        knowledge_manager = KnowledgeManager(self.memory_base, game_state.game_id)
+        knowledge_manager = KnowledgeManager(self._mb(game_state), game_state.game_id)
         summary = knowledge_manager.read_knowledge_summary(seer.id, "seer")
         investigated_names = set()
         for line in summary.split("\n"):
@@ -720,10 +726,10 @@ class UnifiedGameAgent:
         # Try up to 2 attempts with JSON validation
         result = None
         for attempt in range(2):
-            self._save_debug_log(game_state.game_id, witch.id, game_state.round_number,
+            self._save_debug_log(game_state, witch.id, game_state.round_number,
                                  "witch", attempt + 1, "prompt", prompt)
             response = self._llm_call(prompt, max_tokens=200)
-            self._save_debug_log(game_state.game_id, witch.id, game_state.round_number,
+            self._save_debug_log(game_state, witch.id, game_state.round_number,
                                  "witch", attempt + 1, "response", response)
             result = parse_json_response(
                 response,
@@ -753,7 +759,7 @@ class UnifiedGameAgent:
             action = "skip"
 
         # Get game-specific knowledge manager
-        knowledge_manager = KnowledgeManager(self.memory_base, game_state.game_id)
+        knowledge_manager = KnowledgeManager(self._mb(game_state), game_state.game_id)
 
         # Update witch knowledge
         if action == "save":
@@ -800,10 +806,10 @@ class UnifiedGameAgent:
         memories = self._load_player_memories(hunter, game_state)
         prompt = get_hunter_shoot_prompt(hunter, memories, game_state)
 
-        self._save_debug_log(game_state.game_id, hunter.id, game_state.round_number,
+        self._save_debug_log(game_state, hunter.id, game_state.round_number,
                              "hunter", 1, "prompt", prompt)
         response = self._llm_call(prompt, max_tokens=400)
-        self._save_debug_log(game_state.game_id, hunter.id, game_state.round_number,
+        self._save_debug_log(game_state, hunter.id, game_state.round_number,
                              "hunter", 1, "response", response)
 
         # Extract player name from <target> tag
@@ -839,10 +845,10 @@ class UnifiedGameAgent:
         memories = self._load_player_memories(guard, game_state)
         prompt = get_guard_action_prompt(guard, memories, game_state)
 
-        self._save_debug_log(game_state.game_id, guard.id, game_state.round_number,
+        self._save_debug_log(game_state, guard.id, game_state.round_number,
                              "guard", 1, "prompt", prompt)
         response = self._llm_call(prompt, max_tokens=400)
-        self._save_debug_log(game_state.game_id, guard.id, game_state.round_number,
+        self._save_debug_log(game_state, guard.id, game_state.round_number,
                              "guard", 1, "response", response)
 
         # Extract player name from <target> tag, fallback to raw response
@@ -854,7 +860,7 @@ class UnifiedGameAgent:
         if "不守护" in response:
             log.info(f"[Guard AI] {guard.name} chose not to protect anyone")
             # Update guard knowledge
-            knowledge_manager = KnowledgeManager(self.memory_base, game_state.game_id)
+            knowledge_manager = KnowledgeManager(self._mb(game_state), game_state.game_id)
             knowledge_manager.update_knowledge_summary(
                 player_id=guard.id,
                 role="guard",
@@ -880,6 +886,7 @@ class UnifiedGameAgent:
 
         if not target:
             # Fallback: random choice excluding last guarded
+            log.warning(f"[Guard] {guard.name}: LLM target not found, using random fallback")
             candidates = [p for p in alive_players if p.id != last_guarded_id]
             if not candidates:
                 candidates = alive_players
@@ -887,7 +894,7 @@ class UnifiedGameAgent:
 
         if target:
             # Update guard knowledge
-            knowledge_manager = KnowledgeManager(self.memory_base, game_state.game_id)
+            knowledge_manager = KnowledgeManager(self._mb(game_state), game_state.game_id)
             knowledge_manager.update_knowledge_summary(
                 player_id=guard.id,
                 role="guard",
@@ -972,13 +979,13 @@ class UnifiedGameAgent:
         temp = preset.temperature_override if preset else 0.7
 
         for attempt in range(2):
-            self._save_debug_log(game_state.game_id, player.id, game_state.round_number,
+            self._save_debug_log(game_state, player.id, game_state.round_number,
                                  "speech", attempt + 1, "prompt", user_prompt, system_prompt)
             response = self._llm_call(
                 user_prompt, max_tokens=500, temperature=temp,
                 system_prompt=system_prompt,
             )
-            self._save_debug_log(game_state.game_id, player.id, game_state.round_number,
+            self._save_debug_log(game_state, player.id, game_state.round_number,
                                  "speech", attempt + 1, "response", response)
             speech = self._extract_speech(response)
             if speech:
@@ -988,6 +995,7 @@ class UnifiedGameAgent:
                         f"raw: {response[:100]}")
 
         # All attempts failed — return a safe default
+        log.error(f"[Speech] {player.name}: all LLM attempts failed, using default speech")
         defaults = [
             "我目前还在观察，先听听大家的看法。",
             "现在信息不多，我觉得大家先分享线索比较好。",
@@ -1047,13 +1055,13 @@ class UnifiedGameAgent:
         temp = max(base_temp - 0.1, 0.3)
 
         for attempt in range(2):
-            self._save_debug_log(game_state.game_id, player.id, game_state.round_number,
+            self._save_debug_log(game_state, player.id, game_state.round_number,
                                  "vote", attempt + 1, "prompt", user_prompt, system_prompt)
             response = self._llm_call(
                 user_prompt, max_tokens=500, temperature=temp,
                 system_prompt=system_prompt,
             )
-            self._save_debug_log(game_state.game_id, player.id, game_state.round_number,
+            self._save_debug_log(game_state, player.id, game_state.round_number,
                                  "vote", attempt + 1, "response", response)
             result = self._extract_vote(response, alive_others)
             if result:
@@ -1063,6 +1071,7 @@ class UnifiedGameAgent:
 
         # Fallback: random choice
         if alive_others:
+            log.error(f"[Vote] {player.name}: all LLM attempts failed, using random fallback")
             target = random.choice(alive_others)
             return target.name
         return "ABSTAIN"

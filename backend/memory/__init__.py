@@ -19,7 +19,6 @@ from .knowledge import KnowledgeManager
 from .profile import ProfileManager
 from .event_index import EventIndexManager
 from .strategy_tracker import StrategyTracker
-from .reasoning_bank import ReasoningBank
 from .player_profiler import PlayerProfiler
 from .reflection import ReflectionPipeline
 
@@ -39,7 +38,6 @@ __all__ = [
     # New modules
     "EventIndexManager",
     "StrategyTracker",
-    "ReasoningBank",
     "PlayerProfiler",
     "ReflectionPipeline",
 ]

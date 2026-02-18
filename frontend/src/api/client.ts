@@ -7,6 +7,7 @@ import type {
   SpeechRequest,
   ActionResult,
 } from '../types/game';
+import { useGameStore } from '../store/gameStore';
 
 // Use same origin (frontend served from FastAPI backend)
 export const apiClient = axios.create({
@@ -15,6 +16,25 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+apiClient.interceptors.request.use((config) => {
+    const key = useGameStore.getState().accessKey;
+    if (key) {
+        config.headers.Authorization = `Bearer ${key}`;
+    }
+    return config;
+});
+
+apiClient.interceptors.response.use(
+    (resp) => resp,
+    (err) => {
+        if (err.response?.status === 401) {
+            useGameStore.getState().setAccessKey(null);
+            useGameStore.getState().setPlayerName(null);
+        }
+        return Promise.reject(err);
+    }
+);
 
 // Character pool for landing page
 export interface CharacterInfo {
@@ -25,6 +45,12 @@ export interface CharacterInfo {
 
 // Game API
 export const gameApi = {
+  /** POST /api/verify-key */
+  verifyKey: async (): Promise<{ status: string; player_name: string }> => {
+    const resp = await apiClient.post('/api/verify-key');
+    return resp.data;
+  },
+
   /** GET /api/characters */
   getCharacters: async (): Promise<CharacterInfo[]> => {
     const response = await apiClient.get('/api/characters');

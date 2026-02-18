@@ -64,8 +64,9 @@ class GameState(BaseModel):
     day_number: int = 0
     players: list[Player] = Field(default_factory=list)
     events: list[GameEvent] = Field(default_factory=list)
-    memory_base: Path | None = None
+    memory_base: Path | None = Field(default=None, exclude=True)
     winner: str | None = None
+    human_identity: str = Field(default="local", exclude=True)
 
     # Persistent cross-round state
     seer_checks: dict[str, str] = Field(default_factory=dict)  # Player ID -> "WEREWOLF" | "GOOD" (persists across rounds)

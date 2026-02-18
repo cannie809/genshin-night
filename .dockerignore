@@ -1,0 +1,9 @@
+.git
+.memory
+node_modules
+frontend/node_modules
+__pycache__
+*.pyc
+.env.local
+tests/
+.claude/

@@ -41,37 +41,43 @@ class GameEngine:
 
         # Memory managers are created per-game (see _get_memory_managers)
 
-    def _get_memory_managers(self, game_id: str):
+    def _get_memory_managers(self, game_id: str, memory_base: Path = None):
         """Get memory managers for a specific game.
 
         Args:
             game_id: Game ID to get managers for
+            memory_base: Player-scoped memory base (falls back to self.memory_base)
 
         Returns:
             Tuple of (records_manager, knowledge_manager, profile_manager)
         """
-        records_manager = RecordsManager(self.memory_base, game_id)
-        knowledge_manager = KnowledgeManager(self.memory_base, game_id)
-        profile_manager = ProfileManager(self.memory_base, game_id)
+        mb = memory_base or self.memory_base
+        records_manager = RecordsManager(mb, game_id)
+        knowledge_manager = KnowledgeManager(mb, game_id)
+        profile_manager = ProfileManager(mb, game_id)
         return records_manager, knowledge_manager, profile_manager
 
-    def _get_event_index(self, game_id: str) -> EventIndexManager:
+    def _get_event_index(self, game_id: str, memory_base: Path = None) -> EventIndexManager:
         """Get event index manager for a specific game.
 
         Args:
             game_id: Game ID to get event index for
+            memory_base: Player-scoped memory base (falls back to self.memory_base)
 
         Returns:
             EventIndexManager instance
         """
-        return EventIndexManager(self.memory_base, game_id)
+        mb = memory_base or self.memory_base
+        return EventIndexManager(mb, game_id)
 
-    def create_game(self, mode: str = DEFAULT_MODE, preferred_role: str | None = None) -> GameState:
+    def create_game(self, mode: str = DEFAULT_MODE, preferred_role: str | None = None,
+                    human_identity: str = "local") -> GameState:
         """Create a new game with specified mode.
 
         Args:
             mode: Game mode key (e.g., "classic_6_witch")
             preferred_role: Role the human player wants, or None for random
+            human_identity: Player identity for per-user memory isolation
 
         Returns:
             Initialized game state
@@ -85,6 +91,9 @@ class GameEngine:
         game_config = GAME_MODES[mode]
         game_id = str(uuid.uuid4())
 
+        # Player-scoped memory base: .memory/{human_identity}/
+        player_memory_base = self.memory_base / human_identity
+
         # Create game state
         game_state = GameState(
             game_id=game_id,
@@ -92,7 +101,8 @@ class GameEngine:
             phase=GamePhase.SETUP,
             round_number=0,
             day_number=0,
-            memory_base=self.memory_base,
+            memory_base=player_memory_base,
+            human_identity=human_identity,
         )
 
         # Assign roles
@@ -137,12 +147,12 @@ class GameEngine:
                 )
             )
 
-        # Clean up old game directories (keep most recent 10)
-        profiler = PlayerProfiler(self.memory_base)
+        # Clean up old game directories (keep most recent 10) — scoped to this player
+        profiler = PlayerProfiler(player_memory_base)
         try:
             cleaned = profiler.cleanup_old_games()
             if cleaned:
-                log.info(f"[PlayerProfiler] Cleaned {cleaned} old game directories")
+                log.info(f"[PlayerProfiler] Cleaned {cleaned} old game directories for {human_identity}")
         finally:
             profiler.close()
 
@@ -150,7 +160,7 @@ class GameEngine:
         self._initialize_memories(game_state)
 
         # Initialize event index
-        event_index = EventIndexManager(self.memory_base, game_id)
+        event_index = EventIndexManager(player_memory_base, game_id)
         event_index.initialize()
 
         # Add setup event
@@ -176,8 +186,8 @@ class GameEngine:
         Args:
             game_state: Game state with players
         """
-        # Get memory managers for this specific game
-        _, knowledge_manager, profile_manager = self._get_memory_managers(game_state.game_id)
+        # Get memory managers for this specific game (player-scoped)
+        _, knowledge_manager, profile_manager = self._get_memory_managers(game_state.game_id, game_state.memory_base)
 
         # Initialize individual player memories
         for player in game_state.players:
@@ -237,7 +247,7 @@ class GameEngine:
                 )
                 # Distill human player behavior profile
                 try:
-                    profiler = PlayerProfiler(self.memory_base)
+                    profiler = PlayerProfiler(game_state.memory_base)
                     try:
                         human_role = next((p.role for p in game_state.players if p.is_human), None)
                         result = profiler.distill_game(
@@ -309,8 +319,9 @@ class GameEngine:
             game_state.phase = next_phase
             return next_phase
 
-        except (ValueError, IndexError):
+        except (ValueError, IndexError) as e:
             # If phase not in order or at end, stay in current phase
+            log.error(f"[Engine] Phase transition error from {current_phase}: {e}")
             return current_phase
 
     def process_night_guard(self, game_state: GameState, target_id: str | None) -> dict[str, any]:
@@ -503,7 +514,7 @@ class GameEngine:
                     dead_ids.append(victim_id)
                     log.info(f"[Morning] {victim.name} ({victim_id}) killed by werewolves")
                     # Record death in event index
-                    event_index = self._get_event_index(game_state.game_id)
+                    event_index = self._get_event_index(game_state.game_id, game_state.memory_base)
                     event_index.record_death(
                         round_num=game_state.round_number,
                         player_name=victim.name,
@@ -518,7 +529,7 @@ class GameEngine:
                 poisoned.alive = False
                 dead_ids.append(game_state.poisoned_player)
                 # Record death in event index
-                event_index = self._get_event_index(game_state.game_id)
+                event_index = self._get_event_index(game_state.game_id, game_state.memory_base)
                 event_index.record_death(
                     round_num=game_state.round_number,
                     player_name=poisoned.name,
@@ -684,7 +695,7 @@ class GameEngine:
         eliminated.alive = False
 
         # Record death in event index
-        event_index = self._get_event_index(game_state.game_id)
+        event_index = self._get_event_index(game_state.game_id, game_state.memory_base)
         event_index.record_death(
             round_num=game_state.round_number,
             player_name=eliminated.name,
@@ -744,7 +755,7 @@ class GameEngine:
         hunter = next((p for p in game_state.players if p.role == "hunter" and not p.alive), None)
         hunter_name = hunter.name if hunter else "猎人"
 
-        event_index = self._get_event_index(game_state.game_id)
+        event_index = self._get_event_index(game_state.game_id, game_state.memory_base)
 
         # Hunter chooses not to shoot (压枪) — identity stays hidden
         if not target_id:
@@ -826,10 +837,10 @@ class GameEngine:
         speeches = snapshot["speeches"]
 
         # Get memory managers for this specific game
-        records_manager, _, _ = self._get_memory_managers(game_state.game_id)
+        records_manager, _, _ = self._get_memory_managers(game_state.game_id, game_state.memory_base)
 
         # Create day record (shared) — only night deaths go in morning announcement
-        event_index = self._get_event_index(game_state.game_id)
+        event_index = self._get_event_index(game_state.game_id, game_state.memory_base)
         index_data = event_index._read_index()
         night_deaths = [
             d for d in index_data.get("deaths", [])
@@ -887,7 +898,7 @@ class GameEngine:
         and again in end_round with the full snapshot.
         """
         rn = round_num if round_num is not None else game_state.round_number
-        records_manager, _, _ = self._get_memory_managers(game_state.game_id)
+        records_manager, _, _ = self._get_memory_managers(game_state.game_id, game_state.memory_base)
         for player in game_state.players:
             action_data = self._get_player_night_action(player, game_state, snapshot=snapshot)
             records_manager.create_night_record(
@@ -1013,7 +1024,7 @@ class GameEngine:
             return
 
         pipeline = ReflectionPipeline(
-            memory_base=self.memory_base,
+            memory_base=game_state.memory_base or self.memory_base,
             game_id=game_state.game_id,
             llm_call_fn=self._llm_call_fn,
         )

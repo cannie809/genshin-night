@@ -23,23 +23,7 @@
 - Python 3.13+、Node.js 18+、[UV](https://docs.astral.sh/uv/)
 - API Key（OpenRouter / ModelScope / OpenAI 任选其一）
 
-### 1️⃣ 安装
-
-```bash
-git clone https://github.com/tang0389/genshin-night.git
-cd genshin-night
-
-# 后端依赖
-uv sync
-
-# 前端依赖 & 构建
-cd frontend
-npm install
-npm run build
-cd ..
-```
-
-### 2️⃣ 配置 API Key
+### 1️⃣ 配置 API Key
 
 在项目根目录创建 `.env.local`：
 
@@ -61,11 +45,31 @@ LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 ```
 
-### 3️⃣ 启动
+### 2️⃣ 启动
+
+#### 本地开发
 
 ```bash
+git clone https://github.com/tang0389/genshin-night.git
+cd genshin-night
+
+uv sync
+cd frontend && npm install && npm run build && cd ..
 uvicorn backend.app:app --host 0.0.0.0 --port 8000
 ```
+
+#### Docker
+
+```bash
+docker build -t genshin-night .
+docker run -d -p 8000:8000 --env-file .env.local genshin-night
+```
+
+#### Render 一键部署
+
+项目包含 `render.yaml`，连接仓库后在 Render Dashboard 的 Environment 中配置 API Key 即可部署。
+
+---
 
 打开浏览器访问 `http://localhost:8000`。
 
@@ -166,6 +170,8 @@ genshin-night/
 │   └── prefetch.py      # 异步 LLM 预计算
 ├── frontend/            # React 19 + TypeScript + Zustand
 ├── tests/               # 测试
+├── Dockerfile           # Docker 一体化构建
+├── render.yaml          # Render 部署配置
 └── assets/              # README 资源
 ```
 
@@ -188,6 +194,13 @@ pytest tests/test_api.py::test_root
 ## 📝 更新日志
 
 <details open>
+<summary><b>v2.1.0</b> (2026-02-17) — 🚀 Docker 部署 + 多用户隔离</summary>
+
+- ✅ Docker 一体化部署：`Dockerfile` + `render.yaml`，支持 Render 一键部署
+- ✅ Access Key 鉴权 + 每用户记忆隔离
+</details>
+
+<details>
 <summary><b>v2.0.0</b> (2026-02-16) — ⚡ Prefetch 预计算管线 + 编排竞态修复</summary>
 
 - ✅ `PrefetchManager` 异步预计算框架：用户操作间隙预计算 LLM 结果，带缓存与超时
@@ -266,7 +279,7 @@ pytest tests/test_api.py::test_root
 - ✅ 角色攻略 Playbook 注入（静态知识，零 LLM 成本）
 - ✅ EventIndex 事件索引（关键事实不受滑动窗口限制）
 - ✅ StrategyTracker 策略效用追踪
-- ✅ ReasoningBank 跨局学习（>10 局自动蒸馏 + 清理）
+- ~~ReasoningBank 跨局学习（已移除，由 PlayerProfiler 替代）~~
 - 🐛 修复预言家查验结果写入 bug
 </details>
 

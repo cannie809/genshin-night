@@ -3,8 +3,7 @@
 Simulates multi-round, multi-game flows to verify:
 1. Prompt generation includes all memory layers
 2. Memory evolves correctly across rounds (create -> use -> verify -> high-value)
-3. Cross-game growth via ReasoningBank distillation
-4. Complete prompt inspection for manual review
+3. Complete prompt inspection for manual review
 """
 
 import sys
@@ -20,7 +19,6 @@ from dataclasses import dataclass, field
 from backend.ai.prompts import build_base_prompt
 from backend.ai.agent import UnifiedGameAgent
 from backend.memory.reflection import ReflectionPipeline
-from backend.memory.reasoning_bank import ReasoningBank
 from backend.memory.strategy_tracker import StrategyTracker
 from backend.memory.event_index import EventIndexManager
 from backend.memory.storage import MemoryStorage
@@ -367,15 +365,6 @@ def test_1_prompt_generation_with_memories():
         encoding="utf-8",
     )
 
-    # Cross-game experience
-    bank = ReasoningBank(MEMORY_BASE)
-    bank._ensure_dir()
-    (bank.cross_game_dir / "experience.md").write_text(
-        "# 跨局经验库\n\n> 蒸馏经验\n\n"
-        "## 预言家经验\n- 首夜优先验最激进的人\n- 验到狼后第二天必须带节奏\n",
-        encoding="utf-8",
-    )
-
     # Werewolf shared memory
     km.update_werewolf_strategy(
         "\n### 第1轮\n- 击杀Eve\n- Bob跳预言家\n"
@@ -401,7 +390,6 @@ def test_1_prompt_generation_with_memories():
     assert memories["event_index_facts"], "Event index facts should be populated"
     assert memories["high_value_insights"], "High value insights should be populated"
     assert memories["last_reflection_shift"], "Reflection shift should be populated"
-    assert memories["cross_game_experience"], "Cross-game experience should be populated"
     print("PASS: All memory keys populated for seer")
 
     assert "s1r1" in memories["high_value_insights"]
@@ -414,7 +402,6 @@ def test_1_prompt_generation_with_memories():
     assert "白天记录" in prompt
     assert "我的夜间行动" in prompt
     assert "上轮复盘" in prompt
-    assert "历史对局经验" in prompt
     print("PASS: Seer prompt contains all memory sections")
 
     # ── Werewolf memories ──
@@ -635,141 +622,14 @@ def test_2_memory_lifecycle_across_rounds():
 
 
 # ═══════════════════════════════════════════════════════════════════
-# TEST 3: Cross-game growth system
+# TEST 3: Full prompt inspection (manual review)
 # ═══════════════════════════════════════════════════════════════════
 
 
-def test_3_cross_game_growth():
-    """Simulate 2 games, verify ReasoningBank distillation and experience injection."""
-    print("\n" + "=" * 60)
-    print("TEST 3: Cross-game growth system")
-    print("=" * 60)
-
-    cleanup()
-    players = create_players()
-    seer = players[0]
-
-    # ── Game 1: 3 rounds producing high-value items ──
-    print("\n--- Game 1 (3 rounds) ---")
-    setup_game_memory(GAME_1, players)
-    mock_llm = MockLLM()
-    mock_llm.add_response(ROUND_1_REFLECTION)
-    mock_llm.add_response(ROUND_2_REFLECTION)
-    mock_llm.add_response(ROUND_3_REFLECTION)
-    run_three_rounds(GAME_1, seer, players, mock_llm)
-
-    # Verify Game 1 produced high-value items
-    storage = MemoryStorage(seer.id, MEMORY_BASE, GAME_1)
-    meta = storage.read_json(f"knowledge/role/{seer.role}/strategy_meta.json")
-    assert meta["items"]["s1r1"]["helpful_count"] >= 2
-    print("PASS: Game 1 completed with high-value items")
-
-    # ── Distill Game 1 ──
-    bank = ReasoningBank(MEMORY_BASE)
-    distilled = bank.distill_game(GAME_1)
-
-    assert distilled["game_id"] == GAME_1
-    assert len(distilled["role_insights"]) > 0
-    print(f"PASS: Distilled {len(distilled['role_insights'])} roles from Game 1")
-
-    seer_insights = distilled["role_insights"].get("seer", [])
-    assert len(seer_insights) >= 1, f"Should have seer insights, got {len(seer_insights)}"
-    print(f"PASS: Extracted {len(seer_insights)} seer insights")
-
-    bank._merge_insights(distilled)
-
-    experience = bank.read_experience()
-    assert "跨局经验库" in experience
-    assert len(experience) > 50
-    print("PASS: Insights merged into experience.md")
-
-    # Check game_history.json
-    history_path = bank.cross_game_dir / "game_history.json"
-    assert history_path.exists()
-    with open(history_path, "r") as f:
-        history = json.load(f)
-    assert history["total_distilled"] == 1
-    print("PASS: game_history.json updated")
-
-    # ── Game 2: Verify cross-game injection ──
-    print("\n--- Game 2 (verify cross-game injection) ---")
-    setup_game_memory(GAME_2, players)
-
-    agent = UnifiedGameAgent(memory_base=MEMORY_BASE)
-    gs2 = MockGameState(
-        game_id=GAME_2, round_number=1,
-        players=players, alive_players=players,
-    )
-
-    memories = agent._load_player_memories(seer, gs2)
-    assert memories["cross_game_experience"], \
-        f"Should have cross-game experience, got: '{memories['cross_game_experience'][:80]}'"
-    print("PASS: Game 2 loads cross-game experience")
-
-    prompt = build_base_prompt(seer, memories, gs2)
-    assert "历史对局经验" in prompt
-    print("PASS: Game 2 prompt includes cross-game experience section")
-
-    # experience.md format check
-    exp_text = bank.read_experience()
-    assert "## 预言家经验" in exp_text, "Experience should have seer section"
-    print("PASS: experience.md has correct format")
-
-    # ── Test cleanup threshold ──
-    print("\n--- Cleanup threshold test ---")
-    import time
-    import backend.memory.reasoning_bank as rb_module
-
-    # Create many dummy game directories
-    for i in range(12):
-        dummy_dir = MEMORY_BASE / f"cleanup_game_{i:03d}"
-        p_dir = dummy_dir / "player_1" / "knowledge" / "role" / "seer"
-        p_dir.mkdir(parents=True, exist_ok=True)
-        meta_data = {
-            "items": {
-                "s1r1": {
-                    "created_round": 1, "source": "test",
-                    "helpful_count": 3, "harmful_count": 0, "related": [],
-                }
-            },
-            "next_index": 2,
-        }
-        with open(p_dir / "strategy_meta.json", "w") as f:
-            json.dump(meta_data, f)
-        summary_text = (
-            f"# Test\n\n### 策略笔记\n"
-            f"- [#s1r1] [H:3] 清理测试游戏{i}的高价值条目\n"
-        )
-        (p_dir / "summary.md").write_text(summary_text, encoding="utf-8")
-        time.sleep(0.01)  # Ensure mtime ordering
-
-    original_keep = rb_module.KEEP_AFTER_CLEANUP
-    rb_module.KEEP_AFTER_CLEANUP = 5
-    try:
-        cleaned = bank.maybe_cleanup(threshold=10)
-    finally:
-        rb_module.KEEP_AFTER_CLEANUP = original_keep
-
-    assert cleaned > 0, f"Should clean some games, cleaned {cleaned}"
-    remaining = bank.count_games()
-    print(f"PASS: Cleanup removed {cleaned} games, {remaining} remaining")
-
-    experience_after = bank.read_experience()
-    assert "跨局经验库" in experience_after
-    print("PASS: Experience persists after cleanup")
-
-    print("\nTEST 3: ALL PASS")
-
-
-# ═══════════════════════════════════════════════════════════════════
-# TEST 4: Full prompt inspection (manual review)
-# ═══════════════════════════════════════════════════════════════════
-
-
-def test_4_full_game_prompt_inspection():
+def test_3_full_game_prompt_inspection():
     """Generate and print prompts for each role for manual review."""
     print("\n" + "=" * 60)
-    print("TEST 4: Full prompt inspection (manual review)")
+    print("TEST 3: Full prompt inspection (manual review)")
     print("=" * 60)
 
     cleanup()
@@ -825,16 +685,6 @@ def test_4_full_game_prompt_inspection():
         threat_updates={"Alice": 7, "Diana": 4, "Frank": 2},
     )
 
-    # Cross-game experience
-    bank = ReasoningBank(MEMORY_BASE)
-    bank._ensure_dir()
-    (bank.cross_game_dir / "experience.md").write_text(
-        "# 跨局经验库\n\n> 策略经验\n\n"
-        "## 预言家经验\n- 首夜验最积极带节奏的人\n\n"
-        "## 狼人经验\n- 不要两个狼都跳身份\n",
-        encoding="utf-8",
-    )
-
     # Build and print prompts
     agent = UnifiedGameAgent(memory_base=MEMORY_BASE)
     gs = MockGameState(
@@ -865,7 +715,7 @@ def test_4_full_game_prompt_inspection():
                     print(f"  {line}")
 
     print(f"\n{'─' * 50}")
-    print("TEST 4: Prompt inspection complete (review above)")
+    print("TEST 3: Prompt inspection complete (review above)")
     print("(No assertions - this test is for manual review)")
 
 
@@ -877,8 +727,7 @@ if __name__ == "__main__":
     try:
         test_1_prompt_generation_with_memories()
         test_2_memory_lifecycle_across_rounds()
-        test_3_cross_game_growth()
-        test_4_full_game_prompt_inspection()
+        test_3_full_game_prompt_inspection()
 
         print("\n" + "=" * 60)
         print("ALL INTEGRATION TESTS PASSED!")
