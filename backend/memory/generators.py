@@ -298,7 +298,6 @@ def generate_initial_knowledge_summary(role: str, game_mode: str = "classic_6_wi
     """
     role_name = ROLE_CN.get(role, role)
 
-    # Load playbook if available
     playbook_path = Path(__file__).parent.parent / "assets" / "playbooks" / f"{role}.md"
     playbook = ""
     if playbook_path.exists():
@@ -347,7 +346,8 @@ def _build_game_rules(game_mode: str) -> str:
         )
         special_rules = (
             "- 女巫解药：看到受害者后可使用，首夜可自救\n"
-            "- 女巫毒药：可同一夜使用，被毒者直接死亡\n"
+            "- 女巫毒药：毒杀任意存活玩家，被毒者直接死亡\n"
+            "- 女巫限制：每夜只能使用一种药（救人或毒人，不能同时）\n"
             "- 预言家：每晚验一人，得知好人或狼人"
         )
     elif "guard" in game_mode:
@@ -371,7 +371,8 @@ def _build_game_rules(game_mode: str) -> str:
             "2. 预言家查验一名玩家身份"
         )
         special_rules = (
-            "- 猎人：被投票放逐时可开枪带走一人，被毒杀无法开枪\n"
+            "- 猎人：死亡时可开枪带走一名存活玩家（被投票或被狼杀均可开枪）\n"
+            "- 猎人开枪：开枪后猎人身份公开（自证）\n"
             "- 预言家：每晚验一人，得知好人或狼人"
         )
 
