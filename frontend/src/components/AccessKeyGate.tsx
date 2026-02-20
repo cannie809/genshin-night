@@ -1,74 +1,70 @@
-import { useState } from 'react';
-import { useGameStore } from '../store/gameStore';
-import { gameApi } from '../api/client';
+import { useState } from 'react'
+import { useGameStore } from '../store/gameStore'
+import { gameApi } from '../api/client'
 
 export function AccessKeyGate() {
-  const [inputKey, setInputKey] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const { setAccessKey, setPlayerName } = useGameStore();
+  const [inputKey, setInputKey] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const { setAccessKey, setPlayerName } = useGameStore()
 
   const handleSubmit = async () => {
-    if (!inputKey.trim()) return;
-    setError('');
-    setLoading(true);
+    if (!inputKey.trim()) return
+    setError('')
+    setLoading(true)
 
     // Temporarily set the key so the interceptor picks it up
-    setAccessKey(inputKey.trim());
+    setAccessKey(inputKey.trim())
 
     try {
-      const result = await gameApi.verifyKey();
-      setPlayerName(result.player_name);
+      const result = await gameApi.verifyKey()
+      setPlayerName(result.player_name)
     } catch {
-      setAccessKey(null);
-      setPlayerName(null);
-      setError('密钥无效，请检查');
+      setAccessKey(null)
+      setPlayerName(null)
+      setError('密钥无效，请检查')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
+    <div className="flex min-h-screen items-center justify-center p-6">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-display font-bold tracking-[0.15em] bg-gradient-to-b from-amber-200 via-yellow-100 to-amber-300 bg-clip-text text-transparent">
+        <div className="mb-8 text-center">
+          <h1 className="font-display bg-gradient-to-b from-amber-200 via-yellow-100 to-amber-300 bg-clip-text text-4xl font-bold tracking-[0.15em] text-transparent">
             狼人杀
           </h1>
-          <p className="mt-2 text-amber-300/45 text-sm tracking-[0.3em] font-display">
+          <p className="font-display mt-2 text-sm tracking-[0.3em] text-amber-300/45">
             月圆之夜 · 提瓦特的秘密
           </p>
         </div>
 
-        <div className="bg-card/80 backdrop-blur border border-amber-500/20 rounded-2xl p-6 space-y-4">
+        <div className="bg-card/80 space-y-4 rounded-2xl border border-amber-500/20 p-6 backdrop-blur">
           <div>
-            <label className="block text-sm text-amber-200/60 mb-2 tracking-wide">
-              访问密钥
-            </label>
+            <label className="mb-2 block text-sm tracking-wide text-amber-200/60">访问密钥</label>
             <input
               type="password"
               value={inputKey}
               onChange={(e) => setInputKey(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
               placeholder="请输入密钥"
-              className="w-full px-4 py-3 bg-background/60 border border-amber-500/30 rounded-lg text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-amber-400/60 transition-colors"
+              className="bg-background/60 text-foreground placeholder:text-muted-foreground/50 w-full rounded-lg border border-amber-500/30 px-4 py-3 transition-colors focus:border-amber-400/60 focus:outline-none"
               autoFocus
             />
           </div>
 
-          {error && (
-            <p className="text-sm text-red-400">{error}</p>
-          )}
+          {error && <p className="text-sm text-red-400">{error}</p>}
 
           <button
             onClick={handleSubmit}
             disabled={loading || !inputKey.trim()}
-            className="w-full py-3 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-amber-100 font-medium tracking-wide transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full rounded-lg border border-amber-500/40 bg-amber-500/20 py-3 font-medium tracking-wide text-amber-100 transition-colors hover:bg-amber-500/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? '验证中...' : '进入游戏'}
           </button>
         </div>
       </div>
     </div>
-  );
+  )
 }

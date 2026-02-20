@@ -1,25 +1,28 @@
-import { useState } from 'react';
-import { Skull, User, Eye, Crown, X } from 'lucide-react';
-import type { Player } from '../types/game';
-import { useGameStore } from '../store/gameStore';
-import { StickerBubble } from './StickerBubble';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { useState } from 'react'
+import { Skull, User, Eye, Crown, X } from 'lucide-react'
+import type { Player } from '../types/game'
+import { useGameStore } from '../store/gameStore'
+import { StickerBubble } from './StickerBubble'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 
 interface PlayerCardProps {
-  player: Player;
-  isSelected?: boolean;
-  onClick?: () => void;
-  winner?: string | null;
+  player: Player
+  isSelected?: boolean
+  onClick?: () => void
+  winner?: string | null
 }
 
-const roleConfig: Record<string, {
-  label: string;
-  borderColor: string;
-  glowColor: string;
-  badgeClass: string;
-}> = {
+const roleConfig: Record<
+  string,
+  {
+    label: string
+    borderColor: string
+    glowColor: string
+    badgeClass: string
+  }
+> = {
   werewolf: {
     label: '狼人',
     borderColor: 'border-werewolf/60',
@@ -74,7 +77,7 @@ const roleConfig: Record<string, {
     glowColor: 'shadow-[0_0_15px_rgba(59,130,246,0.2)]',
     badgeClass: 'bg-blue-900/80 text-blue-200 border-blue-700/50',
   },
-};
+}
 
 const ALL_GUESS_OPTIONS = [
   { key: 'werewolf', label: '狼人' },
@@ -83,62 +86,64 @@ const ALL_GUESS_OPTIONS = [
   { key: 'hunter', label: '猎人' },
   { key: 'guard', label: '守卫' },
   { key: 'villager', label: '村民' },
-];
+]
 
 function getGuessOptions(mode: string) {
   return ALL_GUESS_OPTIONS.filter((opt) => {
-    if (opt.key === 'witch') return mode.includes('witch');
-    if (opt.key === 'hunter') return mode.includes('hunter');
-    if (opt.key === 'guard') return mode.includes('guard');
-    return true;
-  });
+    if (opt.key === 'witch') return mode.includes('witch')
+    if (opt.key === 'hunter') return mode.includes('hunter')
+    if (opt.key === 'guard') return mode.includes('guard')
+    return true
+  })
 }
 
 /** Derive display role: seer check > guess > unknown */
 function getDisplayRole(player: Player, guess?: string): string {
   // Known role (own role or game-end reveal)
-  if (player.role !== '???') return player.role || '???';
+  if (player.role !== '???') return player.role || '???'
   // Seer-checked: locked
   if (player.seer_result) {
-    return player.seer_result === 'WEREWOLF' ? 'seer_wolf' : 'seer_good';
+    return player.seer_result === 'WEREWOLF' ? 'seer_wolf' : 'seer_good'
   }
   // Player guess: use for styling
-  return guess || '???';
+  return guess || '???'
 }
 
 /** Whether the role badge should be interactive (guessable). */
 function isGuessable(player: Player): boolean {
-  return player.role === '???' && !player.seer_result;
+  return player.role === '???' && !player.seer_result
 }
 
 export function PlayerCard({ player, isSelected, onClick, winner }: PlayerCardProps) {
-  const { gameState, playerGuesses, setPlayerGuess, activeStickerBubbles } = useGameStore();
-  const [expanded, setExpanded] = useState(false);
-  const bubble = activeStickerBubbles.find((b) => b.playerName === player.name);
+  const { gameState, playerGuesses, setPlayerGuess, activeStickerBubbles } = useGameStore()
+  const [expanded, setExpanded] = useState(false)
+  const bubble = activeStickerBubbles.find((b) => b.playerName === player.name)
 
-  const role = player.role || '???';
-  const guess = playerGuesses[player.id];
-  const guessOptions = getGuessOptions(gameState?.mode || '');
-  const displayRole = getDisplayRole(player, guess);
-  const config = roleConfig[displayRole] || roleConfig['???'];
-  const guessable = isGuessable(player);
+  const role = player.role || '???'
+  const guess = playerGuesses[player.id]
+  const guessOptions = getGuessOptions(gameState?.mode || '')
+  const displayRole = getDisplayRole(player, guess)
+  const config = roleConfig[displayRole] || roleConfig['???']
+  const guessable = isGuessable(player)
 
   const isWinner = winner
     ? (role === 'werewolf' && winner === 'werewolf') ||
       (role !== 'werewolf' && role !== '???' && winner === 'good')
-    : null;
+    : null
 
   return (
     <Card
       onClick={player.alive ? onClick : undefined}
       className={cn(
-        "relative p-4 transition-all duration-200 border",
-        player.alive && "cursor-pointer hover:scale-[1.02] hover:shadow-lg",
-        player.alive ? config.borderColor : "border-border/30",
+        'relative border p-4 transition-all duration-200',
+        player.alive && 'cursor-pointer hover:scale-[1.02] hover:shadow-lg',
+        player.alive ? config.borderColor : 'border-border/30',
         player.alive && config.glowColor,
-        isSelected && player.alive && "ring-2 ring-accent border-accent shadow-[0_0_20px_rgba(124,58,237,0.3)]",
-        !player.alive && !isWinner && "opacity-50 grayscale pointer-events-none cursor-not-allowed",
-        !player.alive && isWinner && "opacity-60 pointer-events-none cursor-not-allowed",
+        isSelected &&
+          player.alive &&
+          'ring-accent border-accent shadow-[0_0_20px_rgba(124,58,237,0.3)] ring-2',
+        !player.alive && !isWinner && 'pointer-events-none cursor-not-allowed opacity-50 grayscale',
+        !player.alive && isWinner && 'pointer-events-none cursor-not-allowed opacity-60',
       )}
     >
       {/* Sticker bubble — anchored to Card top-right */}
@@ -146,44 +151,50 @@ export function PlayerCard({ player, isSelected, onClick, winner }: PlayerCardPr
 
       {/* Death overlay */}
       {!player.alive && (
-        <div className="absolute inset-0 flex items-center justify-center rounded-xl z-10">
-          <Skull className="size-10 text-muted-foreground/30" />
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl">
+          <Skull className="text-muted-foreground/30 size-10" />
         </div>
       )}
 
-      <div className={cn(!player.alive && "opacity-60")}>
+      <div className={cn(!player.alive && 'opacity-60')}>
         {/* Header: avatar + name + badge */}
-        <div className="flex items-center justify-between mb-3">
+        <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="relative">
               {player.avatar_url ? (
                 <img
                   src={player.avatar_url}
                   alt={player.name}
-                  className="size-8 rounded-full object-cover border border-border/50"
+                  className="border-border/50 size-8 rounded-full border object-cover"
                 />
               ) : player.is_human ? (
-                <User className="size-4 text-accent" />
+                <User className="text-accent size-4" />
               ) : (
-                <div className="size-8 rounded-full bg-muted flex items-center justify-center text-xs text-muted-foreground border border-border/50">
+                <div className="bg-muted text-muted-foreground border-border/50 flex size-8 items-center justify-center rounded-full border text-xs">
                   AI
                 </div>
               )}
               {isWinner && (
-                <div className="absolute -top-1 -left-1 size-4 rounded-full flex items-center justify-center bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.5)]">
+                <div className="absolute -top-1 -left-1 flex size-4 items-center justify-center rounded-full bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.5)]">
                   <Crown className="size-2.5 text-white" />
                 </div>
               )}
             </div>
-            <span className="font-semibold text-sm">{player.name}</span>
+            <span className="text-sm font-semibold">{player.name}</span>
           </div>
           {!player.is_human && (
-            <Badge variant="outline" className="text-[10px] h-5 bg-muted/50 text-muted-foreground border-border/50">
+            <Badge
+              variant="outline"
+              className="bg-muted/50 text-muted-foreground border-border/50 h-5 text-[10px]"
+            >
               AI
             </Badge>
           )}
           {player.is_human && (
-            <Badge variant="outline" className="text-[10px] h-5 bg-accent/10 text-accent border-accent/30">
+            <Badge
+              variant="outline"
+              className="bg-accent/10 text-accent border-accent/30 h-5 text-[10px]"
+            >
               你
             </Badge>
           )}
@@ -191,43 +202,40 @@ export function PlayerCard({ player, isSelected, onClick, winner }: PlayerCardPr
 
         {/* Role badge area */}
         <div className="flex items-center justify-between">
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
             {expanded ? (
               /* Expanded: show role options */
-              <div
-                className="flex flex-wrap gap-1"
-                onClick={(e) => e.stopPropagation()}
-              >
+              <div className="flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
                 {guessOptions.map((opt) => {
-                  const optConfig = roleConfig[opt.key];
-                  const isActive = guess === opt.key;
+                  const optConfig = roleConfig[opt.key]
+                  const isActive = guess === opt.key
                   return (
                     <button
                       key={opt.key}
                       onClick={(e) => {
-                        e.stopPropagation();
-                        setPlayerGuess(player.id, isActive ? null : opt.key);
-                        setExpanded(false);
+                        e.stopPropagation()
+                        setPlayerGuess(player.id, isActive ? null : opt.key)
+                        setExpanded(false)
                       }}
                       className={cn(
-                        "text-[10px] px-1.5 py-0.5 rounded border transition-all",
+                        'rounded border px-1.5 py-0.5 text-[10px] transition-all',
                         isActive
-                          ? cn(optConfig.badgeClass, "ring-1 ring-white/30")
-                          : cn(optConfig.badgeClass, "opacity-60 hover:opacity-100"),
+                          ? cn(optConfig.badgeClass, 'ring-1 ring-white/30')
+                          : cn(optConfig.badgeClass, 'opacity-60 hover:opacity-100'),
                       )}
                     >
                       {opt.label}
                     </button>
-                  );
+                  )
                 })}
                 {/* Clear / close */}
                 <button
                   onClick={(e) => {
-                    e.stopPropagation();
-                    if (guess) setPlayerGuess(player.id, null);
-                    setExpanded(false);
+                    e.stopPropagation()
+                    if (guess) setPlayerGuess(player.id, null)
+                    setExpanded(false)
                   }}
-                  className="text-[10px] px-1 py-0.5 rounded border border-border/50 text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                  className="border-border/50 text-muted-foreground/60 hover:text-muted-foreground rounded border px-1 py-0.5 text-[10px] transition-colors"
                 >
                   <X className="size-3" />
                 </button>
@@ -236,15 +244,15 @@ export function PlayerCard({ player, isSelected, onClick, winner }: PlayerCardPr
               /* Collapsed & guessable: clickable badge */
               <button
                 onClick={(e) => {
-                  e.stopPropagation();
-                  setExpanded(true);
+                  e.stopPropagation()
+                  setExpanded(true)
                 }}
                 className="group"
               >
                 <Badge
                   variant="outline"
                   className={cn(
-                    "text-xs border cursor-pointer transition-all group-hover:brightness-125",
+                    'cursor-pointer border text-xs transition-all group-hover:brightness-125',
                     guess ? roleConfig[guess]?.badgeClass : config.badgeClass,
                   )}
                 >
@@ -253,20 +261,22 @@ export function PlayerCard({ player, isSelected, onClick, winner }: PlayerCardPr
               </button>
             ) : (
               /* Locked: seer-confirmed or known role */
-              <Badge variant="outline" className={cn("text-xs border", config.badgeClass)}>
-                {displayRole.startsWith('seer_') && <Eye className="size-3 mr-1 inline" />}
+              <Badge variant="outline" className={cn('border text-xs', config.badgeClass)}>
+                {displayRole.startsWith('seer_') && <Eye className="mr-1 inline size-3" />}
                 {config.label}
               </Badge>
             )}
           </div>
-          <span className={cn(
-            "text-xs shrink-0 ml-2",
-            player.alive ? "text-emerald-400" : "text-red-400"
-          )}>
+          <span
+            className={cn(
+              'ml-2 shrink-0 text-xs',
+              player.alive ? 'text-emerald-400' : 'text-red-400',
+            )}
+          >
             {player.alive ? '存活' : '死亡'}
           </span>
         </div>
       </div>
     </Card>
-  );
+  )
 }

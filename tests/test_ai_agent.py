@@ -77,7 +77,7 @@ def test_seer_investigate_mock():
     # Mock LLM response
     target_name = next(p.name for p in game.alive_players if p.id != seer.id)
 
-    with patch.object(agent, '_llm_call', return_value=target_name):
+    with patch.object(agent, "_llm_call", return_value=target_name):
         result = agent.seer_investigate(seer, game)
         print(f"Investigation target: {result}")
 
@@ -112,7 +112,7 @@ def test_werewolf_collab_mock():
   "team_reasoning": "Most dangerous player"
 }}"""
 
-    with patch.object(agent, '_llm_call', return_value=mock_response):
+    with patch.object(agent, "_llm_call", return_value=mock_response):
         result = agent.werewolf_collaborate(game)
         print(f"Kill target: {result}")
 
@@ -136,7 +136,7 @@ def test_speech_generation_mock():
     # Test speech for first 3 players
     mock_speech = "I think we should vote carefully today."
 
-    with patch.object(agent, '_llm_call', return_value=mock_speech):
+    with patch.object(agent, "_llm_call", return_value=mock_speech):
         for player in game.alive_players[:3]:
             speech = agent.generate_speech(player, game)
             print(f"\n{player.name}: {speech}")
@@ -163,7 +163,7 @@ def test_vote_decision_mock():
     # Mock LLM response with player name
     target = next(p for p in game.alive_players if not p.is_human)
 
-    with patch.object(agent, '_llm_call', return_value=target.name):
+    with patch.object(agent, "_llm_call", return_value=target.name):
         for player in game.alive_players[:3]:
             vote = agent.vote_decision(player, game)
             print(f"{player.name} votes for: {vote}")
@@ -194,6 +194,7 @@ def main():
     except Exception as e:
         print(f"\n✗ Test failed with error: {e}")
         import traceback
+
         traceback.print_exc()
 
 

@@ -246,17 +246,17 @@ class KnowledgeManager:
         reflection_md = f"""# 第{round_num}轮复盘
 
 ## 摘要
-{reflection_data.get('summary', '无')}
+{reflection_data.get("summary", "无")}
 
 ## 关键发现
-{reflection_data.get('insights', '无')}
+{reflection_data.get("insights", "无")}
 
 ## 增量条目
-{json.dumps(reflection_data.get('delta_items', []), indent=2, ensure_ascii=False)}
+{json.dumps(reflection_data.get("delta_items", []), indent=2, ensure_ascii=False)}
 
 ## 元数据
 - 轮次: {round_num}
-- 时间: {reflection_data.get('timestamp', '无')}
+- 时间: {reflection_data.get("timestamp", "无")}
 """
 
         # Write reflection file

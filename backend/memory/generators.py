@@ -58,7 +58,7 @@ def generate_day_record(
     for speech in speeches:
         player = speech["player"]
         content = speech["content"]
-        lines.append(f"**{player}**: \"{content}\"")
+        lines.append(f'**{player}**: "{content}"')
         lines.append("")
 
     # Voting
@@ -339,11 +339,7 @@ def _build_game_rules(game_mode: str) -> str:
     if "witch" in game_mode:
         mode_label = "女巫模式"
         roles_text = "2名狼人、1名预言家、1名女巫、2名村民"
-        night_order = (
-            "1. 狼人协商击杀目标\n"
-            "2. 女巫得知受害者，决定是否救人或毒人\n"
-            "3. 预言家查验一名玩家身份"
-        )
+        night_order = "1. 狼人协商击杀目标\n2. 女巫得知受害者，决定是否救人或毒人\n3. 预言家查验一名玩家身份"
         special_rules = (
             "- 女巫解药：看到受害者后可使用，首夜可自救\n"
             "- 女巫毒药：毒杀任意存活玩家，被毒者直接死亡\n"
@@ -353,11 +349,7 @@ def _build_game_rules(game_mode: str) -> str:
     elif "guard" in game_mode:
         mode_label = "守卫模式"
         roles_text = "2名狼人、1名预言家、1名守卫、2名村民"
-        night_order = (
-            "1. 守卫选择守护一名玩家\n"
-            "2. 狼人协商击杀目标\n"
-            "3. 预言家查验一名玩家身份"
-        )
+        night_order = "1. 守卫选择守护一名玩家\n2. 狼人协商击杀目标\n3. 预言家查验一名玩家身份"
         special_rules = (
             "- 守卫：每晚守护一名玩家（含自己），被守护者不被狼人杀死\n"
             "- 守卫限制：不能连续两晚守护同一人\n"
@@ -366,10 +358,7 @@ def _build_game_rules(game_mode: str) -> str:
     else:
         mode_label = "猎人模式"
         roles_text = "2名狼人、1名预言家、1名猎人、2名村民"
-        night_order = (
-            "1. 狼人协商击杀目标\n"
-            "2. 预言家查验一名玩家身份"
-        )
+        night_order = "1. 狼人协商击杀目标\n2. 预言家查验一名玩家身份"
         special_rules = (
             "- 猎人：死亡时可开枪带走一名存活玩家（被投票或被狼杀均可开枪）\n"
             "- 猎人开枪：开枪后猎人身份公开（自证）\n"

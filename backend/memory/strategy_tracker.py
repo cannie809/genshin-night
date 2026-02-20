@@ -38,10 +38,7 @@ class StrategyTracker:
         """Create initial empty metadata file."""
         self.meta_path.parent.mkdir(parents=True, exist_ok=True)
 
-        initial_data = {
-            "items": {},
-            "next_index": 1
-        }
+        initial_data = {"items": {}, "next_index": 1}
 
         with open(self.meta_path, "w", encoding="utf-8") as f:
             json.dump(initial_data, f, indent=2, ensure_ascii=False)
@@ -67,7 +64,7 @@ class StrategyTracker:
             "source": source,
             "helpful_count": 0,
             "harmful_count": 0,
-            "related": []
+            "related": [],
         }
 
         self._write_meta(data)
@@ -132,17 +129,10 @@ class StrategyTracker:
         """
         data = self._read_meta()
 
-        high_value = [
-            item_id
-            for item_id, meta in data["items"].items()
-            if meta["helpful_count"] >= min_helpful
-        ]
+        high_value = [item_id for item_id, meta in data["items"].items() if meta["helpful_count"] >= min_helpful]
 
         # Sort by helpful count (descending)
-        high_value.sort(
-            key=lambda item_id: data["items"][item_id]["helpful_count"],
-            reverse=True
-        )
+        high_value.sort(key=lambda item_id: data["items"][item_id]["helpful_count"], reverse=True)
 
         return high_value
 
@@ -157,11 +147,7 @@ class StrategyTracker:
         """
         data = self._read_meta()
 
-        to_archive = [
-            item_id
-            for item_id, meta in data["items"].items()
-            if meta["harmful_count"] >= max_harmful
-        ]
+        to_archive = [item_id for item_id, meta in data["items"].items() if meta["harmful_count"] >= max_harmful]
 
         return to_archive
 
@@ -197,10 +183,7 @@ class StrategyTracker:
         """Read metadata from disk."""
         if not self.meta_path.exists():
             # Return empty structure if file doesn't exist
-            return {
-                "items": {},
-                "next_index": 1
-            }
+            return {"items": {}, "next_index": 1}
 
         with open(self.meta_path, "r", encoding="utf-8") as f:
             return json.load(f)

@@ -24,8 +24,8 @@ def test_profile_manager():
     # Create profiles for different personality types
     personalities = ["hutao", "zhongli", "fischl"]
     for i, personality in enumerate(personalities):
-        player_id = f"player_{i+1}"
-        player_name = f"Player {i+1}"
+        player_id = f"player_{i + 1}"
+        player_name = f"Player {i + 1}"
 
         print(f"\nCreating profile for {player_name} ({personality})...")
         pm.initialize_player_profile(player_id, player_name, personality)
@@ -76,7 +76,7 @@ def test_knowledge_manager():
     )
     updated_summary = km.read_knowledge_summary("player_1", "seer")
     print(f"Updated summary (showing verified section):")
-    print(updated_summary[updated_summary.find("## Verified"):updated_summary.find("## Verified") + 200])
+    print(updated_summary[updated_summary.find("## Verified") : updated_summary.find("## Verified") + 200])
 
     # Test updating JSON for witch
     print("\n\nTesting knowledge JSON updates for witch...")
@@ -84,12 +84,7 @@ def test_knowledge_manager():
         player_id="player_2",
         role="witch",
         status_updates={"save_potion": False, "last_updated_round": 1},
-        history_append={
-            "round": 1,
-            "action": "save",
-            "target": "Player 3",
-            "reason": "Important player"
-        },
+        history_append={"round": 1, "action": "save", "target": "Player 3", "reason": "Important player"},
     )
     updated_json = km.read_knowledge_json("player_2", "witch")
     print(f"Updated JSON: {updated_json}")
@@ -103,7 +98,7 @@ def test_knowledge_manager():
     km.update_werewolf_strategy("- Round 1: Agreed to kill Player 3 (high threat)")
     km.update_werewolf_threats(
         threat_updates={"Player 3": 10, "Player 5": 7},
-        history_entry={"round": 1, "target": "Player 3", "reasoning": "Strong player"}
+        history_entry={"round": 1, "target": "Player 3", "reasoning": "Strong player"},
     )
 
     shared = km.read_werewolf_shared()
@@ -219,6 +214,7 @@ def main():
     except Exception as e:
         print(f"\n✗ Test failed with error: {e}")
         import traceback
+
         traceback.print_exc()
 
 

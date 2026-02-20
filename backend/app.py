@@ -210,14 +210,18 @@ def _add_wolf_collab_events(game: GameState, collab: dict) -> None:
             parts.append(f"{collab.get('wolf2_name')}: {wolf2_role}")
         game.events.append(
             GameEvent(
-                type="werewolf_chat", round=game.round_number, phase="NIGHT_WEREWOLF",
+                type="werewolf_chat",
+                round=game.round_number,
+                phase="NIGHT_WEREWOLF",
                 message=f"🐺 白天分工: {'；'.join(parts)}",
             )
         )
     if strategy:
         game.events.append(
             GameEvent(
-                type="werewolf_chat", round=game.round_number, phase="NIGHT_WEREWOLF",
+                type="werewolf_chat",
+                round=game.round_number,
+                phase="NIGHT_WEREWOLF",
                 message=f"🐺 本轮策略: {strategy}",
             )
         )
@@ -343,10 +347,14 @@ def game_state_response(game: GameState, requesting_player_id: str = "player_0")
         day_number=game.day_number,
         players=[
             # Reveal all roles when game is over
-            PlayerResponse(id=p.id, name=p.name, role=p.role, alive=p.alive, is_human=p.is_human, avatar_url=p.avatar_url)
+            PlayerResponse(
+                id=p.id, name=p.name, role=p.role, alive=p.alive, is_human=p.is_human, avatar_url=p.avatar_url
+            )
             if game_over
             # Publicly revealed identity (hunter who shot)
-            else PlayerResponse(id=p.id, name=p.name, role=p.role, alive=p.alive, is_human=p.is_human, avatar_url=p.avatar_url)
+            else PlayerResponse(
+                id=p.id, name=p.name, role=p.role, alive=p.alive, is_human=p.is_human, avatar_url=p.avatar_url
+            )
             if p.id in revealed_ids
             else player_response(
                 p,
@@ -374,10 +382,7 @@ async def health():
 @app.get("/api/characters")
 async def list_characters():
     """Return the character pool for the landing page carousel."""
-    return [
-        {"id": c.id, "name": c.name, "avatar_url": c.avatar_url}
-        for c in CHARACTER_PRESETS
-    ]
+    return [{"id": c.id, "name": c.name, "avatar_url": c.avatar_url} for c in CHARACTER_PRESETS]
 
 
 @app.post("/api/verify-key")
@@ -470,9 +475,7 @@ async def night_action(req: NightActionRequest):
                         # Disagreement: random choice, but show both picks
                         target = random.choice([human_target, ai_target])
                         # Find AI wolf name
-                        ai_wolf = next(
-                            (w for w in game.alive_werewolves if not w.is_human), None
-                        )
+                        ai_wolf = next((w for w in game.alive_werewolves if not w.is_human), None)
                         ai_name = ai_wolf.name if ai_wolf else "队友"
                         game.events.append(
                             GameEvent(
@@ -706,9 +709,7 @@ async def wolf_discuss(req: SpeechRequest):
         targets = [p.name for p in game.alive_players if not p.is_werewolf()]
         if targets:
             # Gap 4: Try prefetched wolf discuss result first
-            cached = await prefetch.get_or_wait(
-                game.game_id, "wolf_discuss", game.round_number, timeout=0.5
-            )
+            cached = await prefetch.get_or_wait(game.game_id, "wolf_discuss", game.round_number, timeout=0.5)
             if cached:
                 suggestion, kill_reason, my_plan, teammate_suggestion = cached
             else:
@@ -738,7 +739,9 @@ async def wolf_discuss(req: SpeechRequest):
             # Event 1: Kill suggestion with reasoning
             game.events.append(
                 GameEvent(
-                    type="werewolf_chat", round=game.round_number, phase="NIGHT_WEREWOLF",
+                    type="werewolf_chat",
+                    round=game.round_number,
+                    phase="NIGHT_WEREWOLF",
                     message=f"🐺 {ai_wolf.name}【击杀建议】{suggestion}——{kill_reason}",
                 )
             )
@@ -747,7 +750,9 @@ async def wolf_discuss(req: SpeechRequest):
             if my_plan:
                 game.events.append(
                     GameEvent(
-                        type="werewolf_chat", round=game.round_number, phase="NIGHT_WEREWOLF",
+                        type="werewolf_chat",
+                        round=game.round_number,
+                        phase="NIGHT_WEREWOLF",
                         message=f"🐺 {ai_wolf.name}【白天计划】{my_plan}",
                     )
                 )
@@ -756,7 +761,9 @@ async def wolf_discuss(req: SpeechRequest):
             if teammate_suggestion:
                 game.events.append(
                     GameEvent(
-                        type="werewolf_chat", round=game.round_number, phase="NIGHT_WEREWOLF",
+                        type="werewolf_chat",
+                        round=game.round_number,
+                        phase="NIGHT_WEREWOLF",
                         message=f"🐺 {ai_wolf.name}【对你说】{teammate_suggestion}",
                     )
                 )
@@ -778,6 +785,7 @@ async def wolf_discuss(req: SpeechRequest):
 
             # Update shared memory
             from backend.memory import KnowledgeManager
+
             km = KnowledgeManager(game.memory_base, game.game_id)
             strategy_entry = f"\n### 第{game.round_number}轮\n"
             strategy_entry += f"- **{ai_wolf.name}建议击杀**: {suggestion}（{kill_reason}）\n"
@@ -790,7 +798,9 @@ async def wolf_discuss(req: SpeechRequest):
             # Update AI wolf's individual knowledge summary
             if my_plan:
                 try:
-                    division_content = f"- 第{game.round_number}轮: 建议击杀{suggestion}（{kill_reason}）\n- **我的分工**: {my_plan}"
+                    division_content = (
+                        f"- 第{game.round_number}轮: 建议击杀{suggestion}（{kill_reason}）\n- **我的分工**: {my_plan}"
+                    )
                     km.update_knowledge_summary(
                         player_id=ai_wolf.id,
                         role="werewolf",
@@ -813,6 +823,7 @@ async def wolf_discuss(req: SpeechRequest):
 
 class WolfSpeakRequest(BaseModel):
     """Request for human wolf's night message."""
+
     game_id: str
     player_id: str
     content: str
@@ -846,6 +857,7 @@ async def wolf_human_speak(req: WolfSpeakRequest):
 
     # Update shared memory with human's instructions
     from backend.memory import KnowledgeManager, MemoryStorage
+
     km = KnowledgeManager(game.memory_base, game.game_id)
     km.update_werewolf_strategy(f"- **{human.name}指示**: {content}\n")
 
@@ -891,9 +903,7 @@ async def wolf_human_speak(req: WolfSpeakRequest):
 
         if new_target != old_suggestion:
             log.info(f"[WolfDiscuss] AI changed suggestion: {old_suggestion} → {new_target}")
-            km.update_werewolf_strategy(
-                f"- **{ai_wolf.name}重新考虑后**: 改为建议击杀{new_target}\n"
-            )
+            km.update_werewolf_strategy(f"- **{ai_wolf.name}重新考虑后**: 改为建议击杀{new_target}\n")
 
     return game_state_response(game, requesting_player_id=req.player_id)
 
@@ -936,6 +946,7 @@ async def ai_speak(req: SpeechRequest):
 
 class HumanSpeechRequest(BaseModel):
     """Request for human player speech."""
+
     game_id: str
     player_id: str
     content: str
@@ -1009,6 +1020,7 @@ def _compute_wolf_discuss_sync(game: GameState) -> tuple[str, str, str, str] | N
         return None
 
     from backend.memory import KnowledgeManager, MemoryStorage
+
     km = KnowledgeManager(game.memory_base, game.game_id)
     shared_mem = km.read_werewolf_shared()
     strategy_ctx = shared_mem.get("strategy", "暂无")[:400]
@@ -1022,6 +1034,7 @@ def _compute_wolf_discuss_sync(game: GameState) -> tuple[str, str, str, str] | N
     profile_snippet = wolf_profile[:300] if wolf_profile else ""
 
     from backend.ai.personality import get_character_by_id
+
     wolf_preset = get_character_by_id(ai_wolf.personality)
     voice_hint = ""
     if wolf_preset and wolf_preset.voice_anchors:
@@ -1056,12 +1069,14 @@ def _compute_wolf_discuss_sync(game: GameState) -> tuple[str, str, str, str] | N
     my_plan = ""
     teammate_suggestion = ""
     for attempt in range(2):
-        ai_agent._save_debug_log(game.game_id, ai_wolf.id, game.round_number,
-                                 "wolf_discuss", attempt + 1, "prompt", prompt)
+        ai_agent._save_debug_log(
+            game.game_id, ai_wolf.id, game.round_number, "wolf_discuss", attempt + 1, "prompt", prompt
+        )
         response = ai_agent._llm_call(prompt, max_tokens=300)
-        ai_agent._save_debug_log(game.game_id, ai_wolf.id, game.round_number,
-                                 "wolf_discuss", attempt + 1, "response", response)
-        log.info(f"[WolfDiscuss] AI response (attempt {attempt+1}): {response[:200]}")
+        ai_agent._save_debug_log(
+            game.game_id, ai_wolf.id, game.round_number, "wolf_discuss", attempt + 1, "response", response
+        )
+        log.info(f"[WolfDiscuss] AI response (attempt {attempt + 1}): {response[:200]}")
         result = parse_json_response(
             response,
             required_fields=["kill_target"],
@@ -1073,20 +1088,18 @@ def _compute_wolf_discuss_sync(game: GameState) -> tuple[str, str, str, str] | N
             my_plan = result.get("my_plan", "")
             teammate_suggestion = result.get("teammate_suggestion", "")
             break
-        log.warning(f"[WolfDiscuss] Attempt {attempt+1} JSON parse failed")
+        log.warning(f"[WolfDiscuss] Attempt {attempt + 1} JSON parse failed")
 
     # Simplified non-JSON fallback
     if not suggestion:
-        simple_prompt = (
-            f"你是{ai_wolf.name}，狼人。今晚要杀谁？\n"
-            f"可选: {target_list}\n"
-            f"只说名字和一句理由。"
+        simple_prompt = f"你是{ai_wolf.name}，狼人。今晚要杀谁？\n可选: {target_list}\n只说名字和一句理由。"
+        ai_agent._save_debug_log(
+            game.game_id, ai_wolf.id, game.round_number, "wolf_discuss_simple", 1, "prompt", simple_prompt
         )
-        ai_agent._save_debug_log(game.game_id, ai_wolf.id, game.round_number,
-                                 "wolf_discuss_simple", 1, "prompt", simple_prompt)
         simple_resp = ai_agent._llm_call(simple_prompt, max_tokens=60)
-        ai_agent._save_debug_log(game.game_id, ai_wolf.id, game.round_number,
-                                 "wolf_discuss_simple", 1, "response", simple_resp)
+        ai_agent._save_debug_log(
+            game.game_id, ai_wolf.id, game.round_number, "wolf_discuss_simple", 1, "response", simple_resp
+        )
         if simple_resp.strip():
             for t in targets:
                 if t in simple_resp:
@@ -1120,9 +1133,7 @@ async def _prefetch_pre_speeches(game: GameState, pre_human_ids: list[str]):
         if not player or not player.alive:
             continue
         try:
-            speech, stickers = await loop.run_in_executor(
-                None, ai_agent.generate_speech, player, game
-            )
+            speech, stickers = await loop.run_in_executor(None, ai_agent.generate_speech, player, game)
             game_engine.add_speech(game, player.id, speech)
             results.append((pid, speech, stickers))
         except Exception as e:
@@ -1133,9 +1144,7 @@ async def _prefetch_pre_speeches(game: GameState, pre_human_ids: list[str]):
 async def _adopt_prefetch_speeches(game: GameState, pre_human_ids: list[str]):
     """Wait on the existing prefetch task instead of launching a competing generator."""
     try:
-        cached = await prefetch.get_or_wait(
-            game.game_id, "pre_speeches", game.round_number, timeout=60.0
-        )
+        cached = await prefetch.get_or_wait(game.game_id, "pre_speeches", game.round_number, timeout=60.0)
         if cached:
             # Prefetch succeeded — speeches already in game state, just add events
             for pid, speech, stickers in cached:
@@ -1165,7 +1174,9 @@ async def _prefetch_pre_speeches_with_votes(game: GameState, speaker_ids: list[s
     results = await _prefetch_pre_speeches(game, speaker_ids)
     # Chain: launch vote prefetch now that all speeches are in game state
     await prefetch.launch(
-        game.game_id, "ai_votes", game.round_number,
+        game.game_id,
+        "ai_votes",
+        game.round_number,
         _prefetch_votes(game),
     )
     return results
@@ -1190,7 +1201,9 @@ async def _prefetch_night_actions(game: GameState, human: Player):
             # Gap 4: chain wolf discuss prefetch for human werewolf
             if acting_role == "werewolf":
                 await prefetch.launch(
-                    game.game_id, "wolf_discuss", game.round_number,
+                    game.game_id,
+                    "wolf_discuss",
+                    game.round_number,
                     _prefetch_wolf_discuss(game),
                 )
             break
@@ -1233,9 +1246,7 @@ async def _prefetch_night_actions(game: GameState, human: Player):
                 killed_player = None
                 if game.night_kills:
                     killed_player = game.get_player_by_id(game.night_kills[0])
-                action = await loop.run_in_executor(
-                    None, ai_agent.witch_action, actor, killed_player, game
-                )
+                action = await loop.run_in_executor(None, ai_agent.witch_action, actor, killed_player, game)
                 log.info(f"[Prefetch] AI witch action: {action}")
                 use_save = action.get("action") == "save"
                 use_poison = action.get("action") == "poison"
@@ -1245,7 +1256,9 @@ async def _prefetch_night_actions(game: GameState, human: Player):
                     if poison_target:
                         poison_target_id = poison_target.id
                 game_engine.process_night_witch(
-                    game, use_save=use_save, use_poison=use_poison,
+                    game,
+                    use_save=use_save,
+                    use_poison=use_poison,
                     poison_target_id=poison_target_id,
                 )
 
@@ -1258,14 +1271,18 @@ async def _prefetch_night_actions(game: GameState, human: Player):
         if dead_names:
             game.events.append(
                 GameEvent(
-                    type="morning_death", round=game.round_number, phase="DAY_DISCUSSION",
+                    type="morning_death",
+                    round=game.round_number,
+                    phase="DAY_DISCUSSION",
                     message=f"昨晚倒牌: {', '.join(dead_names)}",
                 )
             )
         else:
             game.events.append(
                 GameEvent(
-                    type="morning_safe", round=game.round_number, phase="DAY_DISCUSSION",
+                    type="morning_safe",
+                    round=game.round_number,
+                    phase="DAY_DISCUSSION",
                     message="昨晚是平安夜，无人倒牌",
                 )
             )
@@ -1273,8 +1290,11 @@ async def _prefetch_night_actions(game: GameState, human: Player):
 
         # Handle hunter death at night (must be AI since human is already dead)
         hunter_dead = next(
-            (game.get_player_by_id(did) for did in dead_ids
-             if game.get_player_by_id(did) and game.get_player_by_id(did).role == "hunter"),
+            (
+                game.get_player_by_id(did)
+                for did in dead_ids
+                if game.get_player_by_id(did) and game.get_player_by_id(did).role == "hunter"
+            ),
             None,
         )
         if hunter_dead and not hunter_dead.is_human:
@@ -1291,8 +1311,9 @@ async def _prefetch_night_actions(game: GameState, human: Player):
                 # so dead player experiences night→morning→game_end naturally.
                 game.deferred_winner = winner
                 game.deferred_events.append(
-                    GameEvent(type="game_end", round=game.round_number, phase="GAME_END",
-                              message=get_victory_message(winner))
+                    GameEvent(
+                        type="game_end", round=game.round_number, phase="GAME_END", message=get_victory_message(winner)
+                    )
                 )
 
         # Check victory after night deaths
@@ -1302,8 +1323,9 @@ async def _prefetch_night_actions(game: GameState, human: Player):
                 # Defer: same as above
                 game.deferred_winner = winner
                 game.deferred_events.append(
-                    GameEvent(type="game_end", round=game.round_number, phase="GAME_END",
-                              message=get_victory_message(winner))
+                    GameEvent(
+                        type="game_end", round=game.round_number, phase="GAME_END", message=get_victory_message(winner)
+                    )
                 )
 
         # Chain speech + vote prefetch (only if game continues)
@@ -1312,7 +1334,9 @@ async def _prefetch_night_actions(game: GameState, human: Player):
             all_speaker_ids = _get_pre_human_ids(game)
             if all_speaker_ids:
                 await prefetch.launch(
-                    game.game_id, "pre_speeches", game.round_number,
+                    game.game_id,
+                    "pre_speeches",
+                    game.round_number,
                     _prefetch_pre_speeches_with_votes(game, all_speaker_ids),
                 )
                 log.info(f"[Prefetch] Chained speech+vote for dead player, {len(all_speaker_ids)} speakers")
@@ -1331,9 +1355,7 @@ async def _prefetch_votes(game: GameState):
 
     async def _single_vote(player):
         try:
-            return player.id, await loop.run_in_executor(
-                None, ai_agent.vote_decision, player, game
-            )
+            return player.id, await loop.run_in_executor(None, ai_agent.vote_decision, player, game)
         except Exception as e:
             log.error(f"[Prefetch] Vote failed for {player.name}: {e}")
             return player.id, None
@@ -1348,8 +1370,7 @@ async def _prefetch_wolf_discuss(game: GameState):
     return await loop.run_in_executor(None, _compute_wolf_discuss_sync, game)
 
 
-async def _background_end_round(game: GameState, round_num: int,
-                                snapshot: RoundSnapshot):
+async def _background_end_round(game: GameState, round_num: int, snapshot: RoundSnapshot):
     """Run end_round in background (writes memory, doesn't affect game flow).
 
     Snapshot must be captured at the call site BEFORE next_phase/reset_round_data
@@ -1358,8 +1379,10 @@ async def _background_end_round(game: GameState, round_num: int,
     loop = asyncio.get_event_loop()
     try:
         await loop.run_in_executor(
-            None, lambda: game_engine.end_round(
-                game, round_num=round_num,
+            None,
+            lambda: game_engine.end_round(
+                game,
+                round_num=round_num,
                 snapshot=snapshot,
             ),
         )
@@ -1368,7 +1391,9 @@ async def _background_end_round(game: GameState, round_num: int,
 
 
 async def _end_round_then_prefetch_night(
-    game: GameState, round_num: int, snapshot: RoundSnapshot,
+    game: GameState,
+    round_num: int,
+    snapshot: RoundSnapshot,
     human: "Player",
 ):
     """Chain end_round → night prefetch so reflections/records are ready for night prompts.
@@ -1394,9 +1419,7 @@ async def _generate_speeches_background(
             if not player or not player.alive:
                 continue
             try:
-                speech, stickers = await loop.run_in_executor(
-                    None, ai_agent.generate_speech, player, game
-                )
+                speech, stickers = await loop.run_in_executor(None, ai_agent.generate_speech, player, game)
                 game_engine.add_speech(game, player.id, speech)
                 game.events.append(
                     GameEvent(
@@ -1414,7 +1437,9 @@ async def _generate_speeches_background(
             # Gap 3: Pre-compute AI votes while user thinks about their vote
             if transition_phase == GamePhase.DAY_VOTE:
                 await prefetch.launch(
-                    game.game_id, "ai_votes", game.round_number,
+                    game.game_id,
+                    "ai_votes",
+                    game.round_number,
                     _prefetch_votes(game),
                 )
     finally:
@@ -1450,14 +1475,12 @@ async def pre_discussion(req: SpeechRequest):
     log.info(f"[PreDiscussion] human at position {human_pos + 1}/{total}")
 
     _existing_speech_names = {
-        ev.message.split("】")[0][1:]
-        for ev in game.events
-        if ev.type == "speech" and ev.round == game.round_number
+        ev.message.split("】")[0][1:] for ev in game.events if ev.type == "speech" and ev.round == game.round_number
     }
     pre_human_ids = [
-        pid for pid in _get_pre_human_ids(game)
-        if game.get_player_by_id(pid)
-        and game.get_player_by_id(pid).name not in _existing_speech_names
+        pid
+        for pid in _get_pre_human_ids(game)
+        if game.get_player_by_id(pid) and game.get_player_by_id(pid).name not in _existing_speech_names
     ]
 
     if pre_human_ids:
@@ -1465,9 +1488,7 @@ async def pre_discussion(req: SpeechRequest):
         # Dead player: wait longer since all speeches are pre-human
         _human = game.get_player_by_id(req.player_id)
         _speech_timeout = 30.0 if (_human and not _human.alive) else 0.5
-        cached = await prefetch.get_or_wait(
-            game.game_id, "pre_speeches", game.round_number, timeout=_speech_timeout
-        )
+        cached = await prefetch.get_or_wait(game.game_id, "pre_speeches", game.round_number, timeout=_speech_timeout)
         if cached:
             # Speeches already generated — add events instantly
             for pid, speech, stickers in cached:
@@ -1535,16 +1556,16 @@ async def finish_discussion(req: SpeechRequest):
 
     if post_human_ids:
         game.ai_speaking = True
-        asyncio.create_task(
-            _generate_speeches_background(game, post_human_ids, transition_phase=GamePhase.DAY_VOTE)
-        )
+        asyncio.create_task(_generate_speeches_background(game, post_human_ids, transition_phase=GamePhase.DAY_VOTE))
     else:
         game.phase = GamePhase.DAY_VOTE
         # Dead player: launch vote prefetch since no background task handles it
         _req_player = game.get_player_by_id(req.player_id)
         if _req_player and not _req_player.alive:
             await prefetch.launch(
-                game.game_id, "ai_votes", game.round_number,
+                game.game_id,
+                "ai_votes",
+                game.round_number,
                 _prefetch_votes(game),
             )
 
@@ -1625,15 +1646,13 @@ async def vote(req: VoteRequest):
         game_engine.add_vote(game, req.player_id, vote_target)
 
         # Gap 3: Use prefetched AI votes if available
-        cached_votes = await prefetch.get_or_wait(
-            game.game_id, "ai_votes", game.round_number, timeout=15.0
-        )
+        cached_votes = await prefetch.get_or_wait(game.game_id, "ai_votes", game.round_number, timeout=15.0)
 
         # Auto-trigger AI votes (use cached or compute fresh in parallel)
         uncached_players = [
-            p for p in game.alive_players
-            if not p.is_human and p.id not in game.votes
-            and not (cached_votes and p.id in cached_votes)
+            p
+            for p in game.alive_players
+            if not p.is_human and p.id not in game.votes and not (cached_votes and p.id in cached_votes)
         ]
 
         # Apply cached votes immediately
@@ -1651,10 +1670,7 @@ async def vote(req: VoteRequest):
         # Compute uncached votes in parallel
         if uncached_players:
             loop = asyncio.get_event_loop()
-            tasks = [
-                loop.run_in_executor(None, ai_agent.vote_decision, p, game)
-                for p in uncached_players
-            ]
+            tasks = [loop.run_in_executor(None, ai_agent.vote_decision, p, game) for p in uncached_players]
             fresh_votes = await asyncio.gather(*tasks, return_exceptions=True)
             for ai_player, target_name in zip(uncached_players, fresh_votes):
                 if isinstance(target_name, Exception):
@@ -1691,14 +1707,24 @@ async def vote(req: VoteRequest):
             # Chain: end_round (memory writes + reflections) → night prefetch
             # so that day_record, night_record, and reflection strategy shifts
             # are on disk before night action prompts read them.
-            night_phases = {GamePhase.NIGHT_GUARD, GamePhase.NIGHT_WEREWOLF, GamePhase.NIGHT_SEER, GamePhase.NIGHT_WITCH}
+            night_phases = {
+                GamePhase.NIGHT_GUARD,
+                GamePhase.NIGHT_WEREWOLF,
+                GamePhase.NIGHT_SEER,
+                GamePhase.NIGHT_WITCH,
+            }
             if game.phase in night_phases and not game.winner:
                 human = game.get_player_by_id(req.player_id)
                 if human:
                     await prefetch.launch(
-                        game.game_id, "night_actions", game.round_number,
+                        game.game_id,
+                        "night_actions",
+                        game.round_number,
                         _end_round_then_prefetch_night(
-                            game, _snap_rn, _snap, human,
+                            game,
+                            _snap_rn,
+                            _snap,
+                            human,
                         ),
                     )
                 else:
@@ -1730,15 +1756,13 @@ async def ai_vote(req: SpeechRequest):
 
     try:
         # Gap 3: Use prefetched AI votes if available
-        cached_votes = await prefetch.get_or_wait(
-            game.game_id, "ai_votes", game.round_number, timeout=15.0
-        )
+        cached_votes = await prefetch.get_or_wait(game.game_id, "ai_votes", game.round_number, timeout=15.0)
 
         # Apply cached votes + compute uncached in parallel (same as /vote)
         uncached_players = [
-            p for p in game.alive_players
-            if not p.is_human and p.id not in game.votes
-            and not (cached_votes and p.id in cached_votes)
+            p
+            for p in game.alive_players
+            if not p.is_human and p.id not in game.votes and not (cached_votes and p.id in cached_votes)
         ]
         if cached_votes:
             for player in game.alive_players:
@@ -1752,10 +1776,7 @@ async def ai_vote(req: SpeechRequest):
                             game_engine.add_vote(game, player.id, target.id)
         if uncached_players:
             loop = asyncio.get_event_loop()
-            tasks = [
-                loop.run_in_executor(None, ai_agent.vote_decision, p, game)
-                for p in uncached_players
-            ]
+            tasks = [loop.run_in_executor(None, ai_agent.vote_decision, p, game) for p in uncached_players]
             fresh_votes = await asyncio.gather(*tasks, return_exceptions=True)
             for player, target_name in zip(uncached_players, fresh_votes):
                 if isinstance(target_name, Exception):
@@ -1790,14 +1811,24 @@ async def ai_vote(req: SpeechRequest):
         else:
             # Gap 2: Pre-compute night actions while user views vote results
             # Chain: end_round (memory writes + reflections) → night prefetch
-            night_phases = {GamePhase.NIGHT_GUARD, GamePhase.NIGHT_WEREWOLF, GamePhase.NIGHT_SEER, GamePhase.NIGHT_WITCH}
+            night_phases = {
+                GamePhase.NIGHT_GUARD,
+                GamePhase.NIGHT_WEREWOLF,
+                GamePhase.NIGHT_SEER,
+                GamePhase.NIGHT_WITCH,
+            }
             if game.phase in night_phases and not game.winner:
                 human = game.get_player_by_id(req.player_id)
                 if human:
                     await prefetch.launch(
-                        game.game_id, "night_actions", game.round_number,
+                        game.game_id,
+                        "night_actions",
+                        game.round_number,
                         _end_round_then_prefetch_night(
-                            game, _snap_rn, _snap, human,
+                            game,
+                            _snap_rn,
+                            _snap,
+                            human,
                         ),
                     )
                 else:
@@ -1853,9 +1884,7 @@ async def hunter_shoot(req: NightActionRequest):
         log.info(f"[HunterShoot] Shot processed: {result}")
 
         # Determine context: night death or vote death
-        night_death = any(
-            e.type == "hunter_death_night" for e in game.events
-        )
+        night_death = any(e.type == "hunter_death_night" for e in game.events)
 
         # Check victory after hunter's shot
         winner = check_victory(game)
@@ -1889,14 +1918,24 @@ async def hunter_shoot(req: NightActionRequest):
         pending = _pending_end_round.pop(game.game_id, None)
         if pending:
             _snap_rn, _snap = pending
-            night_phases = {GamePhase.NIGHT_GUARD, GamePhase.NIGHT_WEREWOLF, GamePhase.NIGHT_SEER, GamePhase.NIGHT_WITCH}
+            night_phases = {
+                GamePhase.NIGHT_GUARD,
+                GamePhase.NIGHT_WEREWOLF,
+                GamePhase.NIGHT_SEER,
+                GamePhase.NIGHT_WITCH,
+            }
             if game.phase in night_phases and not game.winner:
                 human_player = game.get_player_by_id(req.player_id)
                 if human_player:
                     await prefetch.launch(
-                        game.game_id, "night_actions", game.round_number,
+                        game.game_id,
+                        "night_actions",
+                        game.round_number,
                         _end_round_then_prefetch_night(
-                            game, _snap_rn, _snap, human_player,
+                            game,
+                            _snap_rn,
+                            _snap,
+                            human_player,
                         ),
                     )
                 else:
@@ -1942,9 +1981,7 @@ async def advance_night(req: SpeechRequest):
 
     try:
         # Gap 2: Try to use prefetched night actions (launched after vote)
-        cached_night = await prefetch.get_or_wait(
-            game.game_id, "night_actions", game.round_number, timeout=60.0
-        )
+        cached_night = await prefetch.get_or_wait(game.game_id, "night_actions", game.round_number, timeout=60.0)
         if cached_night is not None:
             log.info("[AdvanceNight] Using prefetched night actions — game state already updated")
         else:
@@ -2004,7 +2041,9 @@ async def advance_night(req: SpeechRequest):
                         if game.night_kills:
                             killed_player = game.get_player_by_id(game.night_kills[0])
                         action = ai_agent.witch_action(actor, killed_player, game)
-                        log.info(f"[AdvanceNight] AI witch action: {action}, save_available={game.witch_save_available}, poison_available={game.witch_poison_available}")
+                        log.info(
+                            f"[AdvanceNight] AI witch action: {action}, save_available={game.witch_save_available}, poison_available={game.witch_poison_available}"
+                        )
                         use_save = action.get("action") == "save"
                         use_poison = action.get("action") == "poison"
                         poison_target_id = None
@@ -2013,7 +2052,9 @@ async def advance_night(req: SpeechRequest):
                             if poison_target:
                                 poison_target_id = poison_target.id
                         game_engine.process_night_witch(
-                            game, use_save=use_save, use_poison=use_poison,
+                            game,
+                            use_save=use_save,
+                            use_poison=use_poison,
                             poison_target_id=poison_target_id,
                         )
 
@@ -2022,15 +2063,16 @@ async def advance_night(req: SpeechRequest):
         # Gap 4: If stopped at NIGHT_WEREWOLF for human wolf, prefetch wolf discuss
         if game.phase == GamePhase.NIGHT_WEREWOLF and human.role == "werewolf" and human.alive:
             await prefetch.launch(
-                game.game_id, "wolf_discuss", game.round_number,
+                game.game_id,
+                "wolf_discuss",
+                game.round_number,
                 _prefetch_wolf_discuss(game),
             )
 
         # If all night phases done and now at DAY_DISCUSSION, process morning
         # Guard: skip if already processed by night_actions prefetch (dead player flow)
         morning_already = any(
-            e.type in ("morning_death", "morning_safe") and e.round == game.round_number
-            for e in game.events
+            e.type in ("morning_death", "morning_safe") and e.round == game.round_number for e in game.events
         )
 
         # Reveal deferred winner from prefetch (dead player reaching advance-night)
@@ -2068,8 +2110,11 @@ async def advance_night(req: SpeechRequest):
 
             # Check if hunter died at night → trigger HUNTER_SHOOT
             hunter_dead = next(
-                (game.get_player_by_id(did) for did in dead_ids
-                 if game.get_player_by_id(did) and game.get_player_by_id(did).role == "hunter"),
+                (
+                    game.get_player_by_id(did)
+                    for did in dead_ids
+                    if game.get_player_by_id(did) and game.get_player_by_id(did).role == "hunter"
+                ),
                 None,
             )
             if hunter_dead:
@@ -2113,16 +2158,22 @@ async def advance_night(req: SpeechRequest):
                 # Distill human player behavior profile
                 try:
                     from backend.memory.player_profiler import PlayerProfiler
+
                     profiler = PlayerProfiler(game.memory_base)
                     try:
                         human_role = next((p.role for p in game.players if p.is_human), None)
                         result = profiler.distill_game(
-                            game.game_id, game,
-                            getattr(ai_agent, '_llm_call', None),
+                            game.game_id,
+                            game,
+                            getattr(ai_agent, "_llm_call", None),
                         )
                         if result["count"] > 0:
-                            log.info(f"[PlayerProfiler] Distilled {result['count']} observations from game {game.game_id[:8]}...")
-                            rl = profiler.reinforce(game.game_id, game.winner, human_role, matched_ids=result["matched_ids"])
+                            log.info(
+                                f"[PlayerProfiler] Distilled {result['count']} observations from game {game.game_id[:8]}..."
+                            )
+                            rl = profiler.reinforce(
+                                game.game_id, game.winner, human_role, matched_ids=result["matched_ids"]
+                            )
                             if rl["reinforced"] or rl["penalized"]:
                                 log.info(f"[PlayerProfiler] RL update: +{rl['reinforced']} -{rl['penalized']}")
                             profiler.decay_unreinforced(game.game_id, rl["adjusted_ids"])
@@ -2140,7 +2191,9 @@ async def advance_night(req: SpeechRequest):
                 pre_human_ids = _get_pre_human_ids(game)
                 if pre_human_ids:
                     await prefetch.launch(
-                        game.game_id, "pre_speeches", game.round_number,
+                        game.game_id,
+                        "pre_speeches",
+                        game.round_number,
                         _prefetch_pre_speeches(game, pre_human_ids),
                     )
 

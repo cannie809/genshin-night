@@ -1,15 +1,18 @@
-import { Moon, Sun, Vote, Crosshair, Eye, Sparkles, Shield } from 'lucide-react';
-import { useGameStore } from '../store/gameStore';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { Moon, Sun, Vote, Crosshair, Eye, Sparkles, Shield } from 'lucide-react'
+import { useGameStore } from '../store/gameStore'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 
-const phaseConfig: Record<string, {
-  label: string;
-  icon: typeof Moon;
-  gradient: string;
-  textColor: string;
-  badgeClass: string;
-}> = {
+const phaseConfig: Record<
+  string,
+  {
+    label: string
+    icon: typeof Moon
+    gradient: string
+    textColor: string
+    badgeClass: string
+  }
+> = {
   NIGHT_GUARD: {
     label: '守卫守护',
     icon: Shield,
@@ -73,7 +76,7 @@ const phaseConfig: Record<string, {
     textColor: 'text-gray-200',
     badgeClass: 'bg-gray-800/60 text-gray-300 border-gray-600/50',
   },
-};
+}
 
 // Map night phases to the role that acts during that phase
 const nightPhaseRole: Record<string, string> = {
@@ -81,7 +84,7 @@ const nightPhaseRole: Record<string, string> = {
   NIGHT_SEER: 'seer',
   NIGHT_WITCH: 'witch',
   NIGHT_GUARD: 'guard',
-};
+}
 
 const genericNightConfig = {
   label: '夜间行动中',
@@ -89,24 +92,24 @@ const genericNightConfig = {
   gradient: 'from-slate-950 via-slate-900/80 to-slate-950',
   textColor: 'text-slate-200',
   badgeClass: 'bg-slate-900/60 text-slate-300 border-slate-700/50',
-};
+}
 
 export function PhaseIndicator() {
-  const { gameState, playerId } = useGameStore();
+  const { gameState, playerId } = useGameStore()
 
-  if (!gameState) return null;
+  if (!gameState) return null
 
-  const phase = gameState.phase || '';
-  const isNight = phase.startsWith('NIGHT_');
+  const phase = gameState.phase || ''
+  const isNight = phase.startsWith('NIGHT_')
 
   // For night phases, only show the specific banner if it's the human player's own role acting.
   // Otherwise show a generic "夜间行动中" to avoid leaking which roles are still alive.
-  let config;
+  let config
   if (isNight) {
-    const humanPlayer = gameState.players.find((p) => p.id === playerId);
-    const actingRole = nightPhaseRole[phase];
-    const isMyPhase = humanPlayer && actingRole && humanPlayer.role === actingRole;
-    config = isMyPhase ? phaseConfig[phase] : genericNightConfig;
+    const humanPlayer = gameState.players.find((p) => p.id === playerId)
+    const actingRole = nightPhaseRole[phase]
+    const isMyPhase = humanPlayer && actingRole && humanPlayer.role === actingRole
+    config = isMyPhase ? phaseConfig[phase] : genericNightConfig
   } else {
     config = phaseConfig[phase] || {
       label: phase,
@@ -114,17 +117,19 @@ export function PhaseIndicator() {
       gradient: 'from-gray-900 via-gray-800 to-gray-900',
       textColor: 'text-gray-300',
       badgeClass: 'bg-gray-800 text-gray-300 border-gray-600',
-    };
+    }
   }
 
-  const Icon = config.icon;
+  const Icon = config.icon
 
   return (
-    <div className="mb-6 animate-fade-in">
-      <div className={cn(
-        "relative rounded-xl overflow-hidden border border-border/30",
-        `bg-gradient-to-r ${config.gradient}`,
-      )}>
+    <div className="animate-fade-in mb-6">
+      <div
+        className={cn(
+          'border-border/30 relative overflow-hidden rounded-xl border',
+          `bg-gradient-to-r ${config.gradient}`,
+        )}
+      >
         {/* Atmospheric overlay */}
         {isNight && (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_50%,_rgba(124,58,237,0.1)_0%,_transparent_50%)]" />
@@ -132,24 +137,26 @@ export function PhaseIndicator() {
 
         <div className="relative flex items-center justify-between p-4 md:p-5">
           <div className="flex items-center gap-3">
-            <div className={cn(
-              "p-2 rounded-lg",
-              isNight ? "bg-white/5" : "bg-white/10"
-            )}>
-              <Icon className={cn("size-6", config.textColor)} />
+            <div className={cn('rounded-lg p-2', isNight ? 'bg-white/5' : 'bg-white/10')}>
+              <Icon className={cn('size-6', config.textColor)} />
             </div>
             <div>
-              <div className={cn("text-xl md:text-2xl font-display font-bold tracking-wide", config.textColor)}>
+              <div
+                className={cn(
+                  'font-display text-xl font-bold tracking-wide md:text-2xl',
+                  config.textColor,
+                )}
+              >
                 {config.label}
               </div>
             </div>
           </div>
 
-          <Badge variant="outline" className={cn("text-sm border px-3 py-1", config.badgeClass)}>
+          <Badge variant="outline" className={cn('border px-3 py-1 text-sm', config.badgeClass)}>
             第 {gameState.round_number} 轮
           </Badge>
         </div>
       </div>
     </div>
-  );
+  )
 }

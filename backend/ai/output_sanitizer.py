@@ -51,8 +51,8 @@ def sanitize_speech(text: str) -> str | None:
     # 4. Remove English words/sentences embedded in Chinese text
     # Keep: numbers, punctuation, short English names (≤8 chars)
     # Remove: English phrases (>8 chars or multiple English words)
-    text = re.sub(r'\b[A-Za-z]{9,}\b', '', text)
-    text = re.sub(r'(?<![A-Za-z])[A-Za-z]+\s+[A-Za-z]+\s+[A-Za-z]+(?![A-Za-z])', '', text)
+    text = re.sub(r"\b[A-Za-z]{9,}\b", "", text)
+    text = re.sub(r"(?<![A-Za-z])[A-Za-z]+\s+[A-Za-z]+\s+[A-Za-z]+(?![A-Za-z])", "", text)
 
     # 5. Remove meta-information leaks (only the meta prefix + its clause, not the whole line)
     meta_patterns = [
@@ -139,8 +139,7 @@ def parse_json_response(
             if field in result and valid_values:
                 if result[field] not in valid_values:
                     log.warning(
-                        f"[JSONParser] Invalid value for {field}: "
-                        f"{result[field]}, expected one of {valid_values}"
+                        f"[JSONParser] Invalid value for {field}: {result[field]}, expected one of {valid_values}"
                     )
                     return None
 

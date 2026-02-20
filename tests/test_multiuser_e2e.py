@@ -75,6 +75,7 @@ def _play_one_round(engine: GameEngine, game):
         engine.add_vote(game, p.id, vote_target.id)
 
     from backend.models import RoundSnapshot
+
     snapshot = RoundSnapshot(
         night_kills=list(game.night_kills),
         saved_player=game.saved_player,
@@ -107,22 +108,25 @@ def _play_one_round(engine: GameEngine, game):
 def _fake_llm(prompt, max_tokens=500, temperature=0.7):
     """Fake LLM that returns plausible profiler observations."""
     import json
-    return json.dumps([
-        {
-            "perspective": "good_teammate",
-            "behavior_category": "speech_pattern",
-            "game_phase": "mid",
-            "observation": "玩家在发言中喜欢用逻辑推理来说服其他人",
-            "keywords": "逻辑,推理,说服"
-        },
-        {
-            "perspective": "wolf_opponent",
-            "behavior_category": "voting_behavior",
-            "game_phase": "mid",
-            "observation": "投票倾向于跟随预言家的判断",
-            "keywords": "跟票,预言家,投票"
-        },
-    ])
+
+    return json.dumps(
+        [
+            {
+                "perspective": "good_teammate",
+                "behavior_category": "speech_pattern",
+                "game_phase": "mid",
+                "observation": "玩家在发言中喜欢用逻辑推理来说服其他人",
+                "keywords": "逻辑,推理,说服",
+            },
+            {
+                "perspective": "wolf_opponent",
+                "behavior_category": "voting_behavior",
+                "game_phase": "mid",
+                "observation": "投票倾向于跟随预言家的判断",
+                "keywords": "跟票,预言家,投票",
+            },
+        ]
+    )
 
 
 def test_multiuser_isolation():
@@ -196,9 +200,7 @@ def test_multiuser_isolation():
         alice_game.winner = "good"
         alice_profiler = PlayerProfiler(alice_game.memory_base)
         try:
-            result = alice_profiler.distill_game(
-                alice_game.game_id, alice_game, _fake_llm
-            )
+            result = alice_profiler.distill_game(alice_game.game_id, alice_game, _fake_llm)
             print(f"  Alice profiler distilled: {result['count']} observations")
         finally:
             alice_profiler.close()
@@ -206,9 +208,7 @@ def test_multiuser_isolation():
         bob_game.winner = "werewolf"
         bob_profiler = PlayerProfiler(bob_game.memory_base)
         try:
-            result = bob_profiler.distill_game(
-                bob_game.game_id, bob_game, _fake_llm
-            )
+            result = bob_profiler.distill_game(bob_game.game_id, bob_game, _fake_llm)
             print(f"  Bob   profiler distilled: {result['count']} observations")
         finally:
             bob_profiler.close()
@@ -244,16 +244,14 @@ def test_multiuser_isolation():
         # Verify no cross-contamination: alice's DB shouldn't have bob's game_id
         conn = sqlite3.connect(str(alice_db))
         bob_in_alice = conn.execute(
-            "SELECT COUNT(*) FROM game_history WHERE game_id = ?",
-            (bob_game.game_id,)
+            "SELECT COUNT(*) FROM game_history WHERE game_id = ?", (bob_game.game_id,)
         ).fetchone()[0]
         conn.close()
         assert bob_in_alice == 0, "Bob's game should NOT be in Alice's DB"
 
         conn = sqlite3.connect(str(bob_db))
         alice_in_bob = conn.execute(
-            "SELECT COUNT(*) FROM game_history WHERE game_id = ?",
-            (alice_game.game_id,)
+            "SELECT COUNT(*) FROM game_history WHERE game_id = ?", (alice_game.game_id,)
         ).fetchone()[0]
         conn.close()
         assert alice_in_bob == 0, "Alice's game should NOT be in Bob's DB"

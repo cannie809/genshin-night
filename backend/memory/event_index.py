@@ -37,11 +37,7 @@ class EventIndexManager:
         """Create empty event index."""
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
 
-        initial_data = {
-            "claims": [],
-            "deaths": [],
-            "key_contradictions": []
-        }
+        initial_data = {"claims": [], "deaths": [], "key_contradictions": []}
 
         with open(self.index_path, "w", encoding="utf-8") as f:
             json.dump(initial_data, f, indent=2, ensure_ascii=False)
@@ -74,9 +70,7 @@ class EventIndexManager:
 
         # Check for duplicates
         for existing in data["deaths"]:
-            if (existing["round"] == round_num and
-                existing["player"] == player_name and
-                existing["night"] == is_night):
+            if existing["round"] == round_num and existing["player"] == player_name and existing["night"] == is_night:
                 log.warning(f"Death already recorded: {player_name} in round {round_num}")
                 return
 
@@ -85,13 +79,7 @@ class EventIndexManager:
 
         log.info(f"Recorded death: {player_name} ({cause}) in round {round_num}, night={is_night}")
 
-    def record_claim(
-        self,
-        round_num: int,
-        player_name: str,
-        claimed_role: str,
-        status: str = "unverified"
-    ) -> None:
+    def record_claim(self, round_num: int, player_name: str, claimed_role: str, status: str = "unverified") -> None:
         """Record a role claim.
 
         Args:
@@ -102,12 +90,7 @@ class EventIndexManager:
         """
         data = self._read_index()
 
-        claim_record = {
-            "round": round_num,
-            "player": player_name,
-            "claimed_role": claimed_role,
-            "status": status
-        }
+        claim_record = {"round": round_num, "player": player_name, "claimed_role": claimed_role, "status": status}
 
         # Check if player already has a claim - update instead
         for existing in data["claims"]:
@@ -148,12 +131,7 @@ class EventIndexManager:
 
         self._write_index(data)
 
-    def record_contradiction(
-        self,
-        round_num: int,
-        players: list[str],
-        contradiction_type: str
-    ) -> None:
+    def record_contradiction(self, round_num: int, players: list[str], contradiction_type: str) -> None:
         """Record a contradiction between players.
 
         Args:
@@ -163,17 +141,15 @@ class EventIndexManager:
         """
         data = self._read_index()
 
-        contradiction_record = {
-            "round": round_num,
-            "between": players,
-            "type": contradiction_type
-        }
+        contradiction_record = {"round": round_num, "between": players, "type": contradiction_type}
 
         # Check for duplicates
         for existing in data["key_contradictions"]:
-            if (existing["round"] == round_num and
-                set(existing["between"]) == set(players) and
-                existing["type"] == contradiction_type):
+            if (
+                existing["round"] == round_num
+                and set(existing["between"]) == set(players)
+                and existing["type"] == contradiction_type
+            ):
                 log.warning(f"Contradiction already recorded: {contradiction_type} in round {round_num}")
                 return
 
@@ -214,7 +190,7 @@ class EventIndexManager:
                     "werewolf_kill": "被狼人击杀",
                     "witch_poison": "被女巫毒杀",
                     "vote_elimination": "被投票出局",
-                    "hunter_shot": "被猎人击杀"
+                    "hunter_shot": "被猎人击杀",
                 }
                 cause_text = cause_map.get(death["cause"], death["cause"])
                 lines.append(f"- 第{death['round']}轮({time_label}): {death['player']} {cause_text}")
@@ -234,7 +210,7 @@ class EventIndexManager:
                     "unverified": "未验证",
                     "verified": "已验证",
                     "contested": "有争议",
-                    "disproven": "已证伪"
+                    "disproven": "已证伪",
                 }
                 status_text = status_map.get(claim["status"], claim["status"])
                 lines.append(f"- {claim['player']} 声称{claim['claimed_role']} (第{claim['round']}轮, {status_text})")
@@ -247,7 +223,7 @@ class EventIndexManager:
                 type_map = {
                     "seer_conflict": "预言家冲突",
                     "claim_conflict": "身份声明冲突",
-                    "alibi_conflict": "不在场证明冲突"
+                    "alibi_conflict": "不在场证明冲突",
                 }
                 type_text = type_map.get(contradiction["type"], contradiction["type"])
                 lines.append(f"- 第{contradiction['round']}轮: {players_str} — {type_text}")
@@ -258,11 +234,7 @@ class EventIndexManager:
         """Read event index from disk."""
         if not self.index_path.exists():
             # Return empty structure if file doesn't exist
-            return {
-                "claims": [],
-                "deaths": [],
-                "key_contradictions": []
-            }
+            return {"claims": [], "deaths": [], "key_contradictions": []}
 
         with open(self.index_path, "r", encoding="utf-8") as f:
             return json.load(f)
