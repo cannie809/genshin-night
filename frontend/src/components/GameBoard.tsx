@@ -1,59 +1,59 @@
-import { useState, useEffect, useRef } from 'react';
-import { Moon, RotateCw, X, RefreshCw, Trophy } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useGameStore } from '../store/gameStore';
-import { gameApi } from '../api/client';
-import { PhaseIndicator } from './PhaseIndicator';
-import { PlayerGrid } from './PlayerGrid';
-import { ActionPanel } from './ActionPanel';
-import { GameLog } from './GameLog';
-import { CreateGameForm } from './CreateGameForm';
-import { PhaseTransition } from './PhaseTransition';
-import { cn } from '@/lib/utils';
+import { useState, useEffect, useRef } from 'react'
+import { Moon, RotateCw, X, RefreshCw, Trophy } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { useGameStore } from '../store/gameStore'
+import { gameApi } from '../api/client'
+import { PhaseIndicator } from './PhaseIndicator'
+import { PlayerGrid } from './PlayerGrid'
+import { ActionPanel } from './ActionPanel'
+import { GameLog } from './GameLog'
+import { CreateGameForm } from './CreateGameForm'
+import { PhaseTransition } from './PhaseTransition'
+import { cn } from '@/lib/utils'
 
 // Scrolling avatar carousel (center-big, edges-small)
 function AvatarCarousel({ avatars }: { avatars: string[] }) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const track = trackRef.current;
-    const wrap = wrapRef.current;
-    if (!track || !wrap || avatars.length === 0) return;
+    const track = trackRef.current
+    const wrap = wrapRef.current
+    if (!track || !wrap || avatars.length === 0) return
 
-    let offset = 0;
-    let prev = performance.now();
-    let raf: number;
-    const step = 72; // 56px avatar + 16px gap
-    const total = avatars.length * step;
+    let offset = 0
+    let prev = performance.now()
+    let raf: number
+    const step = 72 // 56px avatar + 16px gap
+    const total = avatars.length * step
 
     const tick = (now: number) => {
-      const dt = (now - prev) / 1000;
-      prev = now;
-      offset = (offset + 28 * dt) % total;
+      const dt = (now - prev) / 1000
+      prev = now
+      offset = (offset + 28 * dt) % total
 
-      const w = wrap.clientWidth;
-      const cx = w / 2;
-      track.style.transform = `translateX(${-offset}px)`;
+      const w = wrap.clientWidth
+      const cx = w / 2
+      track.style.transform = `translateX(${-offset}px)`
 
-      const kids = track.children as HTMLCollectionOf<HTMLElement>;
+      const kids = track.children as HTMLCollectionOf<HTMLElement>
       for (let i = 0; i < kids.length; i++) {
-        const x = i * step + step / 2 - offset;
-        const d = Math.abs(x - cx) / (w / 2);
-        const s = Math.max(0.55, 1 - d * 0.45);
-        const o = Math.max(0.2, 1 - d * 0.6);
-        kids[i].style.transform = `scale(${s})`;
-        kids[i].style.opacity = `${o}`;
+        const x = i * step + step / 2 - offset
+        const d = Math.abs(x - cx) / (w / 2)
+        const s = Math.max(0.55, 1 - d * 0.45)
+        const o = Math.max(0.2, 1 - d * 0.6)
+        kids[i].style.transform = `scale(${s})`
+        kids[i].style.opacity = `${o}`
       }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [avatars]);
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [avatars])
 
-  if (avatars.length === 0) return null;
+  if (avatars.length === 0) return null
   // Triple for seamless wrap
-  const items = [...avatars, ...avatars, ...avatars];
+  const items = [...avatars, ...avatars, ...avatars]
 
   return (
     <div
@@ -61,7 +61,8 @@ function AvatarCarousel({ avatars }: { avatars: string[] }) {
       className="w-full max-w-md overflow-hidden"
       style={{
         maskImage: 'linear-gradient(to right, transparent, black 12%, black 88%, transparent)',
-        WebkitMaskImage: 'linear-gradient(to right, transparent, black 12%, black 88%, transparent)',
+        WebkitMaskImage:
+          'linear-gradient(to right, transparent, black 12%, black 88%, transparent)',
       }}
     >
       <div ref={trackRef} className="flex items-center gap-4" style={{ willChange: 'transform' }}>
@@ -70,14 +71,14 @@ function AvatarCarousel({ avatars }: { avatars: string[] }) {
             key={i}
             src={src}
             alt=""
-            className="size-14 rounded-full object-cover border-2 border-amber-500/30 shrink-0"
+            className="size-14 shrink-0 rounded-full border-2 border-amber-500/30 object-cover"
             style={{ willChange: 'transform, opacity' }}
             draggable={false}
           />
         ))}
       </div>
     </div>
-  );
+  )
 }
 
 // Deterministic constellation stars
@@ -87,7 +88,7 @@ const STARS = Array.from({ length: 50 }, (_, i) => ({
   size: (i % 3) * 0.5 + 1,
   delay: ((i * 7) % 40) / 10,
   dur: (i % 3) + 2.5,
-}));
+}))
 
 // Deterministic floating particles
 const PARTICLES = Array.from({ length: 8 }, (_, i) => ({
@@ -95,7 +96,7 @@ const PARTICLES = Array.from({ length: 8 }, (_, i) => ({
   dur: 6 + (i % 4) * 2,
   delay: i * 1.5,
   opacity: 0.3 + (i % 3) * 0.15,
-}));
+}))
 
 const ROLE_EMOJI: Record<string, string> = {
   werewolf: '🐺',
@@ -104,7 +105,7 @@ const ROLE_EMOJI: Record<string, string> = {
   hunter: '🏹',
   guard: '🛡️',
   villager: '👤',
-};
+}
 
 const ROLE_LABEL: Record<string, string> = {
   werewolf: '狼人',
@@ -113,71 +114,74 @@ const ROLE_LABEL: Record<string, string> = {
   hunter: '猎人',
   guard: '守卫',
   villager: '村民',
-};
+}
 
 export function GameBoard() {
-  const { gameState, playerId } = useGameStore();
-  const [selectedPlayerId, setSelectedPlayerId] = useState<string>();
-  const [refreshing, setRefreshing] = useState(false);
-  const [showWinnerOverlay, setShowWinnerOverlay] = useState(false);
-  const [carouselAvatars, setCarouselAvatars] = useState<string[]>([]);
+  const { gameState, playerId } = useGameStore()
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string>()
+  const [refreshing, setRefreshing] = useState(false)
+  const [showWinnerOverlay, setShowWinnerOverlay] = useState(false)
+  const [carouselAvatars, setCarouselAvatars] = useState<string[]>([])
 
   // Fetch character pool once for landing carousel
   useEffect(() => {
     if (!gameState) {
-      gameApi.getCharacters().then((chars) => {
-        setCarouselAvatars(chars.map((c) => c.avatar_url));
-      }).catch(() => {});
+      gameApi
+        .getCharacters()
+        .then((chars) => {
+          setCarouselAvatars(chars.map((c) => c.avatar_url))
+        })
+        .catch(() => {})
     }
-  }, [!gameState]);
+  }, [!gameState])
 
   // Show winner overlay when game ends
   useEffect(() => {
     if (gameState?.winner) {
-      setShowWinnerOverlay(true);
+      setShowWinnerOverlay(true)
     }
-  }, [gameState?.winner]);
+  }, [gameState?.winner])
 
   // Clear selection when selected player becomes dead (prevents stale target)
   useEffect(() => {
     if (selectedPlayerId && gameState) {
-      const player = gameState.players.find(p => p.id === selectedPlayerId);
+      const player = gameState.players.find((p) => p.id === selectedPlayerId)
       if (player && !player.alive) {
-        setSelectedPlayerId(undefined);
+        setSelectedPlayerId(undefined)
       }
     }
-  }, [gameState?.players, selectedPlayerId]);
+  }, [gameState?.players, selectedPlayerId])
 
   // Auto-refresh game state — fast (1.5s) when AI is speaking, normal (5s) otherwise
   useEffect(() => {
-    if (!gameState) return;
+    if (!gameState) return
 
-    const interval = gameState.ai_speaking ? 1500 : 5000;
+    const interval = gameState.ai_speaking ? 1500 : 5000
     const timer = setInterval(async () => {
-      const current = useGameStore.getState().gameState;
-      if (!current) return; // Game was reset, skip stale poll
+      const current = useGameStore.getState().gameState
+      if (!current) return // Game was reset, skip stale poll
       try {
-        setRefreshing(true);
-        const updated = await gameApi.getGameState(current.game_id, playerId);
+        setRefreshing(true)
+        const updated = await gameApi.getGameState(current.game_id, playerId)
         // Re-check after await — game might have been reset while waiting
-        if (!useGameStore.getState().gameState) return;
-        useGameStore.getState().setGameState(updated);
+        if (!useGameStore.getState().gameState) return
+        useGameStore.getState().setGameState(updated)
       } catch (error) {
-        console.error('Failed to refresh game state:', error);
+        console.error('Failed to refresh game state:', error)
       } finally {
-        setRefreshing(false);
+        setRefreshing(false)
       }
-    }, interval);
+    }, interval)
 
-    return () => clearInterval(timer);
-  }, [gameState?.game_id, gameState?.ai_speaking, playerId]);
+    return () => clearInterval(timer)
+  }, [gameState?.game_id, gameState?.ai_speaking, playerId])
 
   // If game not created, show Genshin-themed landing page
   if (!gameState) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden p-6">
         {/* Constellation star field */}
-        <div className="absolute inset-0 pointer-events-none">
+        <div className="pointer-events-none absolute inset-0">
           {STARS.map((s, i) => (
             <div
               key={i}
@@ -194,7 +198,7 @@ export function GameBoard() {
         </div>
 
         {/* Floating amber particles */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
           {PARTICLES.map((p, i) => (
             <div
               key={i}
@@ -212,48 +216,48 @@ export function GameBoard() {
         </div>
 
         {/* Title */}
-        <div className="text-center mb-5 relative z-10">
-          <h1 className="text-5xl sm:text-6xl font-display font-bold tracking-[0.15em] bg-gradient-to-b from-amber-200 via-yellow-100 to-amber-300 bg-clip-text text-transparent animate-title-glow">
+        <div className="relative z-10 mb-5 text-center">
+          <h1 className="font-display animate-title-glow bg-gradient-to-b from-amber-200 via-yellow-100 to-amber-300 bg-clip-text text-5xl font-bold tracking-[0.15em] text-transparent sm:text-6xl">
             狼人杀
           </h1>
-          <p className="mt-2 text-amber-300/45 text-sm tracking-[0.3em] font-display">
+          <p className="font-display mt-2 text-sm tracking-[0.3em] text-amber-300/45">
             月圆之夜 · 提瓦特的秘密
           </p>
         </div>
 
         {/* Ornamental divider */}
-        <div className="flex items-center justify-center gap-2.5 mb-5 relative z-10">
+        <div className="relative z-10 mb-5 flex items-center justify-center gap-2.5">
           <div className="h-px w-16 bg-gradient-to-r from-transparent to-amber-500/50" />
-          <div className="size-1.5 rotate-45 bg-amber-400/60 animate-pulse-glow" />
+          <div className="animate-pulse-glow size-1.5 rotate-45 bg-amber-400/60" />
           <div className="size-2.5 rotate-45 border border-amber-400/50" />
-          <div className="size-1.5 rotate-45 bg-amber-400/60 animate-pulse-glow" />
+          <div className="animate-pulse-glow size-1.5 rotate-45 bg-amber-400/60" />
           <div className="h-px w-16 bg-gradient-to-l from-transparent to-amber-500/50" />
         </div>
 
         {/* Scrolling character carousel */}
-        <div className="mb-7 relative z-10 w-full max-w-md">
+        <div className="relative z-10 mb-7 w-full max-w-md">
           <AvatarCarousel avatars={carouselAvatars} />
         </div>
 
         <CreateGameForm />
 
         {/* Footer credit */}
-        <p className="mt-8 text-xs text-amber-200/20 tracking-widest font-display relative z-10">
+        <p className="font-display relative z-10 mt-8 text-xs tracking-widest text-amber-200/20">
           AI 驱动的社交推理游戏
         </p>
       </div>
-    );
+    )
   }
 
   return (
     <div className="min-h-screen p-4 md:p-8">
       <PhaseTransition />
-      <div className="max-w-7xl mx-auto">
+      <div className="mx-auto max-w-7xl">
         {/* Header */}
-        <div className="flex justify-between items-center mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Moon className="size-7 text-accent" />
-            <h1 className="text-3xl font-display font-bold tracking-wide bg-gradient-to-r from-red-500 to-purple-400 bg-clip-text text-transparent">
+            <Moon className="text-accent size-7" />
+            <h1 className="font-display bg-gradient-to-r from-red-500 to-purple-400 bg-clip-text text-3xl font-bold tracking-wide text-transparent">
               狼人杀
             </h1>
           </div>
@@ -272,17 +276,19 @@ export function GameBoard() {
                 <Button
                   onClick={() => useGameStore.getState().reset()}
                   size="sm"
-                  className="gap-1.5 bg-accent/20 hover:bg-accent/30 text-accent border border-accent/30"
+                  className="bg-accent/20 hover:bg-accent/30 text-accent border-accent/30 gap-1.5 border"
                 >
                   <RefreshCw className="size-3.5" />
                   再来一局
                 </Button>
               </>
             )}
-            <div className={cn(
-              "flex items-center gap-2 text-sm text-muted-foreground transition-opacity",
-              refreshing ? "opacity-100" : "opacity-0"
-            )}>
+            <div
+              className={cn(
+                'text-muted-foreground flex items-center gap-2 text-sm transition-opacity',
+                refreshing ? 'opacity-100' : 'opacity-0',
+              )}
+            >
               <RotateCw className="size-3.5 animate-spin" />
               <span>刷新中</span>
             </div>
@@ -291,12 +297,12 @@ export function GameBoard() {
 
         <PhaseIndicator />
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="space-y-6 lg:col-span-2">
             <PlayerGrid
               onPlayerSelect={(id) => {
-                const player = gameState.players.find(p => p.id === id);
-                if (player?.alive) setSelectedPlayerId(id);
+                const player = gameState.players.find((p) => p.id === id)
+                if (player?.alive) setSelectedPlayerId(id)
               }}
               selectedPlayerId={selectedPlayerId}
             />
@@ -310,54 +316,56 @@ export function GameBoard() {
 
         {/* Winner Overlay */}
         {showWinnerOverlay && gameState.winner && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in overflow-y-auto py-8">
-            <div className={cn(
-              "relative text-center p-10 rounded-2xl border-2 max-w-lg mx-4",
-              gameState.winner === 'werewolf'
-                ? "bg-gradient-to-b from-red-950 to-red-900/80 border-red-700"
-                : "bg-gradient-to-b from-blue-950 to-blue-900/80 border-blue-700"
-            )}>
+          <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 py-8 backdrop-blur-sm">
+            <div
+              className={cn(
+                'relative mx-4 max-w-lg rounded-2xl border-2 p-10 text-center',
+                gameState.winner === 'werewolf'
+                  ? 'border-red-700 bg-gradient-to-b from-red-950 to-red-900/80'
+                  : 'border-blue-700 bg-gradient-to-b from-blue-950 to-blue-900/80',
+              )}
+            >
               {/* Close button */}
               <button
                 onClick={() => setShowWinnerOverlay(false)}
-                className="absolute top-4 right-4 p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+                className="absolute top-4 right-4 rounded-lg p-1.5 text-white/40 transition-colors hover:bg-white/10 hover:text-white"
               >
                 <X className="size-5" />
               </button>
 
-              <div className="text-5xl mb-3">
-                {gameState.winner === 'werewolf' ? '🐺' : '🏘️'}
-              </div>
-              <h2 className="text-3xl font-display font-bold mb-2 tracking-wide">
-                游戏结束
-              </h2>
-              <p className={cn(
-                "text-xl font-semibold mb-5",
-                gameState.winner === 'werewolf' ? "text-red-300" : "text-blue-300"
-              )}>
+              <div className="mb-3 text-5xl">{gameState.winner === 'werewolf' ? '🐺' : '🏘️'}</div>
+              <h2 className="font-display mb-2 text-3xl font-bold tracking-wide">游戏结束</h2>
+              <p
+                className={cn(
+                  'mb-5 text-xl font-semibold',
+                  gameState.winner === 'werewolf' ? 'text-red-300' : 'text-blue-300',
+                )}
+              >
                 {gameState.winner === 'werewolf' ? '🐺 狼人阵营' : '🏘️ 好人阵营'} 获胜
               </p>
 
               {/* All player roles reveal */}
               <div className="mb-6 text-left">
-                <h3 className="text-sm font-semibold text-white/60 mb-2 text-center tracking-wider">身份揭晓</h3>
+                <h3 className="mb-2 text-center text-sm font-semibold tracking-wider text-white/60">
+                  身份揭晓
+                </h3>
                 <div className="grid grid-cols-2 gap-2">
                   {gameState.players.map((p) => (
                     <div
                       key={p.id}
                       className={cn(
-                        "flex items-center gap-2 px-3 py-2 rounded-lg text-sm",
-                        !p.alive && "opacity-50",
+                        'flex items-center gap-2 rounded-lg px-3 py-2 text-sm',
+                        !p.alive && 'opacity-50',
                         p.role === 'werewolf'
-                          ? "bg-red-900/40 border border-red-800/40"
-                          : "bg-blue-900/30 border border-blue-800/30"
+                          ? 'border border-red-800/40 bg-red-900/40'
+                          : 'border border-blue-800/30 bg-blue-900/30',
                       )}
                     >
                       <span>{ROLE_EMOJI[p.role] || '❓'}</span>
-                      <span className={cn("font-medium", p.is_human && "text-amber-300")}>
+                      <span className={cn('font-medium', p.is_human && 'text-amber-300')}>
                         {p.name}
                       </span>
-                      <span className="text-white/50 ml-auto text-xs">
+                      <span className="ml-auto text-xs text-white/50">
                         {ROLE_LABEL[p.role] || p.role}
                       </span>
                       {!p.alive && <span className="text-xs text-red-400">💀</span>}
@@ -369,7 +377,7 @@ export function GameBoard() {
               <Button
                 onClick={() => setShowWinnerOverlay(false)}
                 size="lg"
-                className="bg-white/10 hover:bg-white/20 text-white border border-white/20 font-semibold tracking-wide"
+                className="border border-white/20 bg-white/10 font-semibold tracking-wide text-white hover:bg-white/20"
               >
                 关闭
               </Button>
@@ -378,5 +386,5 @@ export function GameBoard() {
         )}
       </div>
     </div>
-  );
+  )
 }

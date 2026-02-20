@@ -69,7 +69,9 @@ class GameState(BaseModel):
     human_identity: str = Field(default="local", exclude=True)
 
     # Persistent cross-round state
-    seer_checks: dict[str, str] = Field(default_factory=dict)  # Player ID -> "WEREWOLF" | "GOOD" (persists across rounds)
+    seer_checks: dict[str, str] = Field(
+        default_factory=dict
+    )  # Player ID -> "WEREWOLF" | "GOOD" (persists across rounds)
     witch_save_available: bool = True
     witch_poison_available: bool = True
 

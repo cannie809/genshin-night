@@ -117,7 +117,7 @@ def build_system_prompt(player: "Player", memories: dict[str, any], game_state: 
         System prompt string
     """
     preset = get_character_by_id(player.personality)
-    profile = memories.get('profile', '暂无档案。')
+    profile = memories.get("profile", "暂无档案。")
 
     parts = [f"# 你的角色档案\n\n{profile}"]
 
@@ -125,7 +125,9 @@ def build_system_prompt(player: "Player", memories: dict[str, any], game_state: 
     if preset and preset.voice_anchors:
         anchors = "、".join(f"「{a}」" for a in preset.voice_anchors)
         length_sent, length_chars = _SPEECH_LENGTH.get(preset.id, ("2-3句话", 100))
-        parts.append(f"## 发言铁律\n\n**长度限制**: {length_sent}，不超过{length_chars}字。像真人玩家一样简洁有力地说话，不要写作文。\n**必须使用的声音标记**: {anchors}\n你的每次发言都应自然地融入以上标记中的至少1-2个。\n**每轮必须变化**: 每轮发言的开场方式、比喻手法、论证角度必须和上一轮不同。")
+        parts.append(
+            f"## 发言铁律\n\n**长度限制**: {length_sent}，不超过{length_chars}字。像真人玩家一样简洁有力地说话，不要写作文。\n**必须使用的声音标记**: {anchors}\n你的每次发言都应自然地融入以上标记中的至少1-2个。\n**每轮必须变化**: 每轮发言的开场方式、比喻手法、论证角度必须和上一轮不同。"
+        )
 
     # Never do
     if preset and preset.never_do:
@@ -168,21 +170,21 @@ def _build_situation_context(player: "Player", memories: dict[str, any], game_st
 
 **真实角色**: {player.role}
 
-{memories.get('knowledge_summary', '暂无知识摘要。')}
+{memories.get("knowledge_summary", "暂无知识摘要。")}
 
 """
 
-    if memories.get('knowledge_json'):
+    if memories.get("knowledge_json"):
         prompt += f"""
-**当前状态**: {json.dumps(memories['knowledge_json'].get('status', {}), indent=2, ensure_ascii=False)}
+**当前状态**: {json.dumps(memories["knowledge_json"].get("status", {}), indent=2, ensure_ascii=False)}
 
 """
 
-    high_value = memories.get('high_value_insights', '')
+    high_value = memories.get("high_value_insights", "")
     if high_value:
         prompt += f"\n**高效策略洞察**:\n{high_value}\n\n"
 
-    key_facts = memories.get('event_index_facts', '')
+    key_facts = memories.get("event_index_facts", "")
     if key_facts:
         prompt += f"""
 ---
@@ -202,7 +204,7 @@ def _build_situation_context(player: "Player", memories: dict[str, any], game_st
 
 """
 
-    for day_record in memories.get('day_record', []):
+    for day_record in memories.get("day_record", []):
         prompt += day_record + "\n\n"
 
     prompt += """
@@ -210,7 +212,7 @@ def _build_situation_context(player: "Player", memories: dict[str, any], game_st
 
 """
 
-    for night_record in memories.get('night_record', []):
+    for night_record in memories.get("night_record", []):
         prompt += night_record + "\n\n"
 
     if player.role == "werewolf" and "shared" in memories:
@@ -219,15 +221,15 @@ def _build_situation_context(player: "Player", memories: dict[str, any], game_st
 
 # 狼队共享记忆（绝密 - 白天绝对不能暴露）
 
-{memories['shared'].get('strategy', '暂无团队策略。')}
+{memories["shared"].get("strategy", "暂无团队策略。")}
 
-**威胁评分**: {json.dumps(memories['shared'].get('threats', {}).get('threats', {}), indent=2, ensure_ascii=False)}
+**威胁评分**: {json.dumps(memories["shared"].get("threats", {}).get("threats", {}), indent=2, ensure_ascii=False)}
 
 ---
 
 """
 
-    last_reflection = memories.get('last_reflection_shift', '')
+    last_reflection = memories.get("last_reflection_shift", "")
     if last_reflection:
         prompt += f"""
 ---
@@ -238,7 +240,7 @@ def _build_situation_context(player: "Player", memories: dict[str, any], game_st
 
 """
 
-    player_profile = memories.get('player_behavior_profile', '')
+    player_profile = memories.get("player_behavior_profile", "")
     if player_profile:
         prompt += f"""
 ---
@@ -263,7 +265,7 @@ def build_base_prompt(player: "Player", memories: dict[str, any], game_state: "G
     """
     prompt = f"""# 你的身份
 
-{memories.get('profile', '暂无档案。')}
+{memories.get("profile", "暂无档案。")}
 
 ---
 
@@ -271,24 +273,24 @@ def build_base_prompt(player: "Player", memories: dict[str, any], game_state: "G
 
 **真实角色**: {player.role}
 
-{memories.get('knowledge_summary', '暂无知识摘要。')}
+{memories.get("knowledge_summary", "暂无知识摘要。")}
 
 """
 
     # Add JSON data if available
-    if memories.get('knowledge_json'):
+    if memories.get("knowledge_json"):
         prompt += f"""
-**当前状态**: {json.dumps(memories['knowledge_json'].get('status', {}), indent=2, ensure_ascii=False)}
+**当前状态**: {json.dumps(memories["knowledge_json"].get("status", {}), indent=2, ensure_ascii=False)}
 
 """
 
     # Add high-value insights if available
-    high_value = memories.get('high_value_insights', '')
+    high_value = memories.get("high_value_insights", "")
     if high_value:
         prompt += f"\n**高效策略洞察**:\n{high_value}\n\n"
 
     # Add key facts from event index
-    key_facts = memories.get('event_index_facts', '')
+    key_facts = memories.get("event_index_facts", "")
     if key_facts:
         prompt += f"""
 ---
@@ -309,7 +311,7 @@ def build_base_prompt(player: "Player", memories: dict[str, any], game_state: "G
 """
 
     # Add day records
-    for day_record in memories.get('day_record', []):
+    for day_record in memories.get("day_record", []):
         prompt += day_record + "\n\n"
 
     prompt += """
@@ -318,7 +320,7 @@ def build_base_prompt(player: "Player", memories: dict[str, any], game_state: "G
 """
 
     # Add night records
-    for night_record in memories.get('night_record', []):
+    for night_record in memories.get("night_record", []):
         prompt += night_record + "\n\n"
 
     # If werewolf, add shared memory
@@ -328,16 +330,16 @@ def build_base_prompt(player: "Player", memories: dict[str, any], game_state: "G
 
 # 狼队共享记忆（绝密 - 白天绝对不能暴露）
 
-{memories['shared'].get('strategy', '暂无团队策略。')}
+{memories["shared"].get("strategy", "暂无团队策略。")}
 
-**威胁评分**: {json.dumps(memories['shared'].get('threats', {}).get('threats', {}), indent=2, ensure_ascii=False)}
+**威胁评分**: {json.dumps(memories["shared"].get("threats", {}).get("threats", {}), indent=2, ensure_ascii=False)}
 
 ---
 
 """
 
     # Add last reflection
-    last_reflection = memories.get('last_reflection_shift', '')
+    last_reflection = memories.get("last_reflection_shift", "")
     if last_reflection:
         prompt += f"""
 ---
@@ -349,7 +351,7 @@ def build_base_prompt(player: "Player", memories: dict[str, any], game_state: "G
 """
 
     # Add human player behavior profile (PlayerProfiler)
-    player_profile = memories.get('player_behavior_profile', '')
+    player_profile = memories.get("player_behavior_profile", "")
     if player_profile:
         prompt += f"""
 ---
@@ -384,10 +386,14 @@ def get_werewolf_collab_prompt(
     wolf2_voice = ""
     if wolf1_preset:
         anchors1 = "、".join(f"「{a}」" for a in wolf1_preset.voice_anchors) if wolf1_preset.voice_anchors else ""
-        wolf1_voice = f"{wolf1.name}的语气特征: {wolf1_preset.speech_style[:80]}。声音标记: {anchors1}" if anchors1 else ""
+        wolf1_voice = (
+            f"{wolf1.name}的语气特征: {wolf1_preset.speech_style[:80]}。声音标记: {anchors1}" if anchors1 else ""
+        )
     if wolf2_preset:
         anchors2 = "、".join(f"「{a}」" for a in wolf2_preset.voice_anchors) if wolf2_preset.voice_anchors else ""
-        wolf2_voice = f"{wolf2.name}的语气特征: {wolf2_preset.speech_style[:80]}。声音标记: {anchors2}" if anchors2 else ""
+        wolf2_voice = (
+            f"{wolf2.name}的语气特征: {wolf2_preset.speech_style[:80]}。声音标记: {anchors2}" if anchors2 else ""
+        )
 
     system_prompt = f"""你是狼人杀的策略大师，正在协调两名狼人的夜间行动。
 你的目标是做出最优的击杀决策和白天分工。
@@ -402,27 +408,27 @@ def get_werewolf_collab_prompt(
 
 ## 狼队共享记忆
 
-{shared_mem.get('strategy', '暂无策略。')}
+{shared_mem.get("strategy", "暂无策略。")}
 
-**威胁评分**: {json.dumps(shared_mem.get('threats', {}).get('threats', {}), indent=2, ensure_ascii=False)}
+**威胁评分**: {json.dumps(shared_mem.get("threats", {}).get("threats", {}), indent=2, ensure_ascii=False)}
 
 ## 各自视角
 
 ### {wolf1.name}（性格: {wolf1.personality}）
 
-**简介**: {wolf1_mem.get('profile', '无简介。')[:300]}
+**简介**: {wolf1_mem.get("profile", "无简介。")[:300]}
 
-**最近夜间记录**: {wolf1_mem.get('night_record', ['无'])[0] if wolf1_mem.get('night_record') else '无'}
+**最近夜间记录**: {wolf1_mem.get("night_record", ["无"])[0] if wolf1_mem.get("night_record") else "无"}
 
-**情报**: {wolf1_mem.get('knowledge_summary', '无情报。')[:400]}
+**情报**: {wolf1_mem.get("knowledge_summary", "无情报。")[:400]}
 
 ### {wolf2.name}（性格: {wolf2.personality}）
 
-**简介**: {wolf2_mem.get('profile', '无简介。')[:300]}
+**简介**: {wolf2_mem.get("profile", "无简介。")[:300]}
 
-**最近夜间记录**: {wolf2_mem.get('night_record', ['无'])[0] if wolf2_mem.get('night_record') else '无'}
+**最近夜间记录**: {wolf2_mem.get("night_record", ["无"])[0] if wolf2_mem.get("night_record") else "无"}
 
-**情报**: {wolf2_mem.get('knowledge_summary', '无情报。')[:400]}
+**情报**: {wolf2_mem.get("knowledge_summary", "无情报。")[:400]}
 
 ## 当前局势
 
@@ -530,8 +536,8 @@ def get_witch_action_prompt(
 ## 今晚情报
 
 - **狼人击杀目标**: {killed_player_name if killed_player_name else "无（平安夜）"}
-- **解药状态**: {"可用" if potion_status.get('save_potion') else "已使用"}
-- **毒药状态**: {"可用" if potion_status.get('poison_potion') else "已使用"}
+- **解药状态**: {"可用" if potion_status.get("save_potion") else "已使用"}
+- **毒药状态**: {"可用" if potion_status.get("poison_potion") else "已使用"}
 
 ## 可选行动
 
@@ -601,10 +607,7 @@ def get_speech_prompt(player: "Player", memories: dict, game_state: "GameState")
     # Include speeches already given this round
     prior_speeches = game_state.speeches
     if prior_speeches:
-        speeches_text = "\n".join(
-            f"**{s['player']}**: \"{s['content']}\""
-            for s in prior_speeches
-        )
+        speeches_text = "\n".join(f'**{s["player"]}**: "{s["content"]}"' for s in prior_speeches)
         user_prompt += f"""
 ---
 
@@ -621,7 +624,7 @@ def get_speech_prompt(player: "Player", memories: dict, game_state: "GameState")
         examples = preset.few_shot_wolf_speech if is_wolf else preset.few_shot_good_speech
         if examples:
             faction_label = "狼人阵营" if is_wolf else "好人阵营"
-            examples_text = "\n".join(f"示例{i+1}: \"{ex}\"" for i, ex in enumerate(examples))
+            examples_text = "\n".join(f'示例{i + 1}: "{ex}"' for i, ex in enumerate(examples))
             user_prompt += f"""
 ---
 
@@ -639,9 +642,7 @@ def get_speech_prompt(player: "Player", memories: dict, game_state: "GameState")
         thinking_opener = "内部推理："
 
     # Character-specific length
-    length_sent, length_chars = _SPEECH_LENGTH.get(
-        player.personality, ("2-3句话", 100)
-    )
+    length_sent, length_chars = _SPEECH_LENGTH.get(player.personality, ("2-3句话", 100))
 
     user_prompt += f"""
 ---
@@ -756,10 +757,12 @@ def get_vote_prompt(player: "Player", memories: dict, game_state: "GameState") -
     alive_others = [p.name for p in game_state.alive_players if p.id != player.id]
 
     # Show recent speeches
-    speeches_text = "\n".join([
-        f"**{s['player']}**: \"{s['content']}\""
-        for s in game_state.speeches[-10:]  # Last 10 speeches
-    ])
+    speeches_text = "\n".join(
+        [
+            f'**{s["player"]}**: "{s["content"]}"'
+            for s in game_state.speeches[-10:]  # Last 10 speeches
+        ]
+    )
 
     # Wolf-specific reminder
     wolf_hint = ""

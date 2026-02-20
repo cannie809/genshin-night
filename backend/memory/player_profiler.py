@@ -22,8 +22,8 @@ KEEP_RECENT_GAMES = 20
 # Perspective matrix: (human_role_side) -> [teammate_perspective, opponent_perspective]
 # Win/loss no longer splits perspective type — it's embedded in the prompt wording instead.
 _PERSPECTIVE_MATRIX = {
-    "wolf": ["wolf_teammate", "good_opponent"],   # 狼队友 + 好人对手
-    "good": ["good_teammate", "wolf_opponent"],   # 好人队友 + 狼人对手
+    "wolf": ["wolf_teammate", "good_opponent"],  # 狼队友 + 好人对手
+    "good": ["good_teammate", "wolf_opponent"],  # 好人队友 + 狼人对手
 }
 
 # Role to side mapping
@@ -45,15 +45,20 @@ _PERSPECTIVE_FOR_AI_ROLE = {
 }
 
 _ROLE_CN = {
-    "werewolf": "狼人", "seer": "预言家", "witch": "女巫",
-    "hunter": "猎人", "villager": "村民",
+    "werewolf": "狼人",
+    "seer": "预言家",
+    "witch": "女巫",
+    "hunter": "猎人",
+    "villager": "村民",
 }
 
 _SIDE_CN = {"wolf": "狼人阵营", "good": "好人阵营"}
 
 
 def _build_perspective_desc(
-    perspective: str, human_role: str, human_won: bool,
+    perspective: str,
+    human_role: str,
+    human_won: bool,
 ) -> tuple[str, str]:
     """Build a context-specific perspective description for the distillation prompt.
 
@@ -128,6 +133,7 @@ def _build_perspective_desc(
         return (perspective, perspective)
 
     return (label, instruction)
+
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS player_observations (
@@ -275,9 +281,7 @@ class PlayerProfiler:
         conn = self._get_conn()
 
         # Check if already distilled
-        row = conn.execute(
-            "SELECT id FROM game_history WHERE game_id = ?", (game_id,)
-        ).fetchone()
+        row = conn.execute("SELECT id FROM game_history WHERE game_id = ?", (game_id,)).fetchone()
         if row:
             log.info(f"[PlayerProfiler] Game {game_id[:8]}... already distilled, skipping")
             return _empty
@@ -299,14 +303,13 @@ class PlayerProfiler:
             return _empty
 
         human_side = _ROLE_SIDE.get(human_role, "good")
-        human_won = (human_side == "good" and winning_side == "good") or \
-                    (human_side == "wolf" and winning_side == "werewolf")
+        human_won = (human_side == "good" and winning_side == "good") or (
+            human_side == "wolf" and winning_side == "werewolf"
+        )
         game_outcome = "player_won" if human_won else "player_lost"
 
         # Collect human actions
-        speech_records, vote_records, night_records = self._collect_human_actions(
-            game_id, human, game_state
-        )
+        speech_records, vote_records, night_records = self._collect_human_actions(game_id, human, game_state)
 
         # If no meaningful actions, skip
         if not speech_records and not vote_records and not night_records:
@@ -322,8 +325,12 @@ class PlayerProfiler:
         perspectives = self._determine_perspectives(human_role, human_won)
 
         observations = self._analyze_behaviors(
-            human_role, game_outcome, winning_side,
-            speech_records, vote_records, night_records,
+            human_role,
+            game_outcome,
+            winning_side,
+            speech_records,
+            vote_records,
+            night_records,
             llm_call_fn,
             perspectives,
         )
@@ -365,9 +372,7 @@ class PlayerProfiler:
         log.info(f"[PlayerProfiler] Distilled {new_count} observations from game {game_id[:8]}...")
         return {"count": new_count, "matched_ids": matched_ids}
 
-    def _collect_human_actions(
-        self, game_id: str, human, game_state
-    ) -> tuple[str, str, str]:
+    def _collect_human_actions(self, game_id: str, human, game_state) -> tuple[str, str, str]:
         """Collect human player's actions from game records.
 
         Returns:
@@ -415,7 +420,7 @@ class PlayerProfiler:
             if s.get("player") == human.name:
                 content = s.get("content", "")
                 if content and not any(content in sl for sl in speech_lines):
-                    speech_lines.append(f"第{game_state.round_number}轮: **{human.name}**: \"{content}\"")
+                    speech_lines.append(f'第{game_state.round_number}轮: **{human.name}**: "{content}"')
 
         # Collect votes
         vote_lines = []
@@ -514,24 +519,19 @@ class PlayerProfiler:
         try:
             result = json.loads(text)
             if isinstance(result, list):
-                return [
-                    obs for obs in result
-                    if isinstance(obs, dict) and "observation" in obs
-                ]
+                return [obs for obs in result if isinstance(obs, dict) and "observation" in obs]
         except json.JSONDecodeError:
             pass
 
         # Try to find JSON array in text
         import re
-        match = re.search(r'\[.*\]', text, re.DOTALL)
+
+        match = re.search(r"\[.*\]", text, re.DOTALL)
         if match:
             try:
                 result = json.loads(match.group())
                 if isinstance(result, list):
-                    return [
-                        obs for obs in result
-                        if isinstance(obs, dict) and "observation" in obs
-                    ]
+                    return [obs for obs in result if isinstance(obs, dict) and "observation" in obs]
             except json.JSONDecodeError:
                 pass
 
@@ -615,8 +615,18 @@ class PlayerProfiler:
                 game_outcome, outcome_perspective, confidence, match_count,
                 created_at, updated_at, source_game_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, 0.5, 1, ?, ?, ?)""",
-            (player_role, game_phase, behavior_category, observation, keywords,
-             game_outcome, outcome_perspective, now, now, source_game_id),
+            (
+                player_role,
+                game_phase,
+                behavior_category,
+                observation,
+                keywords,
+                game_outcome,
+                outcome_perspective,
+                now,
+                now,
+                source_game_id,
+            ),
         )
         conn.commit()
         new_id = cursor.lastrowid
@@ -713,16 +723,23 @@ class PlayerProfiler:
             by_role[role].append(obs)
 
         role_cn = {
-            "werewolf": "狼人", "seer": "预言家", "witch": "女巫",
-            "hunter": "猎人", "villager": "村民",
+            "werewolf": "狼人",
+            "seer": "预言家",
+            "witch": "女巫",
+            "hunter": "猎人",
+            "villager": "村民",
         }
 
         phase_cn = {"early": "早期", "mid": "中期", "late": "后期"}
         category_cn = {
-            "speech_pattern": "发言模式", "voting_pattern": "投票模式",
-            "silence_pattern": "沉默模式", "accusation_pattern": "指控模式",
-            "defense_pattern": "防御模式", "night_action": "夜间行动",
-            "cooperation_pattern": "合作模式", "deception_pattern": "欺骗模式",
+            "speech_pattern": "发言模式",
+            "voting_pattern": "投票模式",
+            "silence_pattern": "沉默模式",
+            "accusation_pattern": "指控模式",
+            "defense_pattern": "防御模式",
+            "night_action": "夜间行动",
+            "cooperation_pattern": "合作模式",
+            "deception_pattern": "欺骗模式",
             "identity_claim": "身份声明",
         }
 
@@ -757,7 +774,10 @@ class PlayerProfiler:
     _DECAY = 0.02
 
     def reinforce(
-        self, game_id: str, winning_side: str, human_role: str | None = None,
+        self,
+        game_id: str,
+        winning_side: str,
+        human_role: str | None = None,
         matched_ids: set[int] | None = None,
     ) -> dict:
         """Adjust confidence of observations based on game outcome.
@@ -835,7 +855,9 @@ class PlayerProfiler:
         return {"reinforced": reinforced, "penalized": penalized, "adjusted_ids": adjusted_ids}
 
     def decay_unreinforced(
-        self, current_game_id: str, exclude_ids: set[int] | None = None,
+        self,
+        current_game_id: str,
+        exclude_ids: set[int] | None = None,
     ) -> int:
         """Decay confidence of observations not already adjusted by reinforce.
 
@@ -883,9 +905,7 @@ class PlayerProfiler:
         """
         conn = self._get_conn()
 
-        count = conn.execute(
-            "SELECT COUNT(*) FROM player_observations WHERE confidence < 0.15"
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM player_observations WHERE confidence < 0.15").fetchone()[0]
 
         if count > 0:
             conn.execute("DELETE FROM player_observations WHERE confidence < 0.15")
@@ -937,9 +957,7 @@ class PlayerProfiler:
         conn = self._get_conn()
         obs_count = conn.execute("SELECT COUNT(*) FROM player_observations").fetchone()[0]
         game_count = conn.execute("SELECT COUNT(*) FROM game_history").fetchone()[0]
-        avg_conf = conn.execute(
-            "SELECT AVG(confidence) FROM player_observations"
-        ).fetchone()[0]
+        avg_conf = conn.execute("SELECT AVG(confidence) FROM player_observations").fetchone()[0]
 
         return {
             "total_observations": obs_count,

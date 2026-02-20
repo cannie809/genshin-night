@@ -122,13 +122,17 @@ def test_parse_json_response():
     print("PASS: Clean JSON parsed")
 
     # Markdown code block
-    result = pipeline._parse_json_response('```json\n{"new_items": [{"section": "## Test", "content": "hello world content", "source": "test"}], "updates": [], "strategy_shift": ""}\n```')
+    result = pipeline._parse_json_response(
+        '```json\n{"new_items": [{"section": "## Test", "content": "hello world content", "source": "test"}], "updates": [], "strategy_shift": ""}\n```'
+    )
     assert result is not None
     assert len(result["new_items"]) == 1
     print("PASS: Markdown code block parsed")
 
     # With extra text
-    result = pipeline._parse_json_response('Here is my analysis:\n{"new_items": [], "updates": [], "strategy_shift": "changed"}\nThat is all.')
+    result = pipeline._parse_json_response(
+        'Here is my analysis:\n{"new_items": [], "updates": [], "strategy_shift": "changed"}\nThat is all.'
+    )
     assert result is not None
     assert result["strategy_shift"] == "changed"
     print("PASS: JSON with surrounding text parsed")
@@ -162,7 +166,11 @@ def test_curate_validation():
     # Rule 3: Too many items (>5 should be truncated)
     result = {
         "new_items": [
-            {"section": "### 策略笔记", "content": f"This is item number {i} with enough content to pass validation", "source": "test"}
+            {
+                "section": "### 策略笔记",
+                "content": f"This is item number {i} with enough content to pass validation",
+                "source": "test",
+            }
             for i in range(7)
         ],
         "updates": [],
@@ -224,17 +232,19 @@ def test_full_pipeline_with_mock_llm():
     print("\n=== Testing full pipeline with mock LLM ===")
     setup()
 
-    mock_response = json.dumps({
-        "new_items": [
-            {
-                "section": "### 策略笔记",
-                "content": "根据投票结果分析，player_3 可能与 player_2 是同伙",
-                "source": "round_1_vote_analysis",
-            }
-        ],
-        "updates": [],
-        "strategy_shift": "开始重点关注 player_3 和 player_2 的关系",
-    })
+    mock_response = json.dumps(
+        {
+            "new_items": [
+                {
+                    "section": "### 策略笔记",
+                    "content": "根据投票结果分析，player_3 可能与 player_2 是同伙",
+                    "source": "round_1_vote_analysis",
+                }
+            ],
+            "updates": [],
+            "strategy_shift": "开始重点关注 player_3 和 player_2 的关系",
+        }
+    )
 
     def mock_llm_call(prompt: str, max_tokens: int = 800, temperature: float = 0.7) -> str:
         return mock_response
@@ -314,11 +324,11 @@ def test_hunter_shot_in_reflection():
 
     # Hunter shot section must be present
     assert "猎人开枪" in events_text, f"Missing '猎人开枪' section in:\n{events_text}"
-    assert "Charlie" in events_text and "被猎人开枪带走" in events_text, \
+    assert "Charlie" in events_text and "被猎人开枪带走" in events_text, (
         f"Missing hunter shot detail in:\n{events_text}"
+    )
     # Vote elimination should also be visible
-    assert "Bob" in events_text and "被放逐出局" in events_text, \
-        f"Missing vote elimination in:\n{events_text}"
+    assert "Bob" in events_text and "被放逐出局" in events_text, f"Missing vote elimination in:\n{events_text}"
     print("PASS: Hunter shot events visible in reflection")
 
     # Verify get_key_facts shows hunter identity

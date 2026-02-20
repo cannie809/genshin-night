@@ -163,6 +163,7 @@ class UnifiedGameAgent:
                     else:
                         # Model put everything in <think>; extract from inside
                         import re as _re
+
                         think_match = _re.search(r"<think>(.*?)</think>", raw_content, _re.DOTALL)
                         if think_match:
                             content = think_match.group(1).strip()
@@ -170,7 +171,9 @@ class UnifiedGameAgent:
 
                 result = content.strip()
                 if not result and raw_content:
-                    log.warning(f"[LLM] Content became empty after processing. Raw ({len(raw_content)} chars): {raw_content[:200]}")
+                    log.warning(
+                        f"[LLM] Content became empty after processing. Raw ({len(raw_content)} chars): {raw_content[:200]}"
+                    )
                 elif not result:
                     log.warning(f"[LLM] Empty response from API. Model={self.model}, tokens={max_tokens}")
 
@@ -219,7 +222,15 @@ class UnifiedGameAgent:
         memories["event_index_facts"] = event_index.get_key_facts(viewer_role=player.role)
 
         # Load high-value strategy items
-        meta_path = self._mb(game_state) / game_state.game_id / player.id / "knowledge" / "role" / player.role / "strategy_meta.json"
+        meta_path = (
+            self._mb(game_state)
+            / game_state.game_id
+            / player.id
+            / "knowledge"
+            / "role"
+            / player.role
+            / "strategy_meta.json"
+        )
         if meta_path.exists():
             tracker = StrategyTracker(meta_path)
             high_items = tracker.get_high_value_items(min_helpful=2)
@@ -229,7 +240,7 @@ class UnifiedGameAgent:
                 insights = []
                 for item_id in high_items[:5]:  # Max 5 high-value items
                     # Search for the item in summary by ID tag
-                    pattern = rf'\[#{re.escape(item_id)}\].*?(?=\n|$)'
+                    pattern = rf"\[#{re.escape(item_id)}\].*?(?=\n|$)"
                     match = re.search(pattern, summary)
                     if match:
                         insights.append(match.group(0))
@@ -248,7 +259,11 @@ class UnifiedGameAgent:
                 # Extract strategy shift section
                 if "## 策略调整" in last_reflection:
                     shift_start = last_reflection.index("## 策略调整") + len("## 策略调整")
-                    shift_end = last_reflection.index("##", shift_start) if "##" in last_reflection[shift_start:] else len(last_reflection)
+                    shift_end = (
+                        last_reflection.index("##", shift_start)
+                        if "##" in last_reflection[shift_start:]
+                        else len(last_reflection)
+                    )
                     memories["last_reflection_shift"] = last_reflection[shift_start:shift_end].strip()
                 else:
                     memories["last_reflection_shift"] = ""
@@ -262,7 +277,9 @@ class UnifiedGameAgent:
         try:
             phase = {1: "early", 2: "mid"}.get(game_state.round_number, "late")
             observations = profiler.query_observations(
-                ai_role=player.role, current_phase=phase, limit=5,
+                ai_role=player.role,
+                current_phase=phase,
+                limit=5,
                 game_id=game_state.game_id,
             )
             memories["player_behavior_profile"] = profiler.format_for_prompt(observations, player.role)
@@ -277,8 +294,10 @@ class UnifiedGameAgent:
         Returns:
             Callable with signature (prompt, max_tokens, temperature) -> str
         """
+
         def reflection_call(prompt: str, max_tokens: int = 800, temperature: float = 0.7) -> str:
             return self._llm_call(prompt, max_tokens=max_tokens, temperature=temperature, tier="reflection")
+
         return reflection_call
 
     # === Debug Logging ===
@@ -433,8 +452,10 @@ class UnifiedGameAgent:
         shared_mem = knowledge_manager.read_werewolf_shared()
 
         system_prompt, user_prompt = get_werewolf_collab_prompt(
-            wolf1, wolf1_mem,
-            wolf2, wolf2_mem,
+            wolf1,
+            wolf1_mem,
+            wolf2,
+            wolf2_mem,
             shared_mem,
             game_state,
         )
@@ -444,14 +465,25 @@ class UnifiedGameAgent:
         # Try up to 2 attempts with JSON validation
         result = None
         for attempt in range(2):
-            self._save_debug_log(game_state, wolf1.id, game_state.round_number,
-                                 "wolf_collab", attempt + 1, "prompt", user_prompt, system_prompt)
+            self._save_debug_log(
+                game_state,
+                wolf1.id,
+                game_state.round_number,
+                "wolf_collab",
+                attempt + 1,
+                "prompt",
+                user_prompt,
+                system_prompt,
+            )
             response = self._llm_call(
-                user_prompt, max_tokens=800, temperature=0.5,
+                user_prompt,
+                max_tokens=800,
+                temperature=0.5,
                 system_prompt=system_prompt,
             )
-            self._save_debug_log(game_state, wolf1.id, game_state.round_number,
-                                 "wolf_collab", attempt + 1, "response", response)
+            self._save_debug_log(
+                game_state, wolf1.id, game_state.round_number, "wolf_collab", attempt + 1, "response", response
+            )
             result = parse_json_response(
                 response,
                 required_fields=["final_target"],
@@ -459,7 +491,7 @@ class UnifiedGameAgent:
             )
             if result:
                 break
-            log.warning(f"[WolfCollab] Attempt {attempt+1} JSON parse failed, raw: {response[:200]}")
+            log.warning(f"[WolfCollab] Attempt {attempt + 1} JSON parse failed, raw: {response[:200]}")
 
         if not result:
             # All attempts failed — fallback
@@ -495,7 +527,7 @@ class UnifiedGameAgent:
                 "round": game_state.round_number,
                 "target": target,
                 "reasoning": result.get("team_reasoning", ""),
-            }
+            },
         )
 
         # Write individual wolf assignments to their personal knowledge summaries
@@ -508,7 +540,9 @@ class UnifiedGameAgent:
             if personal_role or personal_reasoning:
                 try:
                     # Append to "团队分工" section
-                    division_content = f"- 第{game_state.round_number}轮: 击杀{target}（{result.get('team_reasoning', '')}）"
+                    division_content = (
+                        f"- 第{game_state.round_number}轮: 击杀{target}（{result.get('team_reasoning', '')}）"
+                    )
                     if personal_role:
                         division_content += f"\n- **我的分工**: {personal_role}"
                     if strategy_summary:
@@ -571,7 +605,7 @@ class UnifiedGameAgent:
         """
         wolf_storage = MemoryStorage(ai_wolf.id, self._mb(game_state), game_state.game_id)
         wolf_profile = wolf_storage.read_profile_personality()
-        profile_snippet = (wolf_profile[:150] if wolf_profile else "")
+        profile_snippet = wolf_profile[:150] if wolf_profile else ""
 
         preset = get_character_by_id(ai_wolf.personality)
         voice_hint = ""
@@ -581,7 +615,7 @@ class UnifiedGameAgent:
 
         prompt = (
             f"你是{ai_wolf.name}，一名狼人。你的队友{human_name}刚刚说了：\n"
-            f"\"{human_message}\"\n\n"
+            f'"{human_message}"\n\n'
             f"## 你的角色\n{profile_snippet}{voice_hint}\n\n"
             f"你之前建议击杀{old_suggestion}。\n"
             f"可选目标: {', '.join(targets)}\n\n"
@@ -594,18 +628,22 @@ class UnifiedGameAgent:
         # Determine attempt number
         try:
             dbg_dir = self._mb(game_state) / game_state.game_id / ai_wolf.id / "debug"
-            rc_count = len(list(dbg_dir.glob(
-                f"wolf_reconsider_round{game_state.round_number}_*_prompt.txt"
-            ))) if dbg_dir.exists() else 0
+            rc_count = (
+                len(list(dbg_dir.glob(f"wolf_reconsider_round{game_state.round_number}_*_prompt.txt")))
+                if dbg_dir.exists()
+                else 0
+            )
             rc_attempt = rc_count + 1
         except Exception:
             rc_attempt = 1
 
-        self._save_debug_log(game_state, ai_wolf.id, game_state.round_number,
-                             "wolf_reconsider", rc_attempt, "prompt", prompt)
+        self._save_debug_log(
+            game_state, ai_wolf.id, game_state.round_number, "wolf_reconsider", rc_attempt, "prompt", prompt
+        )
         response = self._llm_call(prompt, max_tokens=150)
-        self._save_debug_log(game_state, ai_wolf.id, game_state.round_number,
-                             "wolf_reconsider", rc_attempt, "response", response)
+        self._save_debug_log(
+            game_state, ai_wolf.id, game_state.round_number, "wolf_reconsider", rc_attempt, "response", response
+        )
 
         result = parse_json_response(
             response,
@@ -641,11 +679,9 @@ class UnifiedGameAgent:
         memories = self._load_player_memories(seer, game_state)
         prompt = get_seer_check_prompt(seer, memories, game_state)
 
-        self._save_debug_log(game_state, seer.id, game_state.round_number,
-                             "seer", 1, "prompt", prompt)
+        self._save_debug_log(game_state, seer.id, game_state.round_number, "seer", 1, "prompt", prompt)
         response = self._llm_call(prompt, max_tokens=400)
-        self._save_debug_log(game_state, seer.id, game_state.round_number,
-                             "seer", 1, "response", response)
+        self._save_debug_log(game_state, seer.id, game_state.round_number, "seer", 1, "response", response)
 
         # Extract player name from <target> tag, fallback to raw response
         target_match = re.search(r"<target>\s*(.+?)\s*</target>", response, re.DOTALL)
@@ -719,18 +755,16 @@ class UnifiedGameAgent:
 
         killed_name = killed_player.name if killed_player else None
 
-        prompt = get_witch_action_prompt(
-            witch, memories, killed_name, potion_status, game_state
-        )
+        prompt = get_witch_action_prompt(witch, memories, killed_name, potion_status, game_state)
 
         # Try up to 2 attempts with JSON validation
         result = None
         for attempt in range(2):
-            self._save_debug_log(game_state, witch.id, game_state.round_number,
-                                 "witch", attempt + 1, "prompt", prompt)
+            self._save_debug_log(game_state, witch.id, game_state.round_number, "witch", attempt + 1, "prompt", prompt)
             response = self._llm_call(prompt, max_tokens=200)
-            self._save_debug_log(game_state, witch.id, game_state.round_number,
-                                 "witch", attempt + 1, "response", response)
+            self._save_debug_log(
+                game_state, witch.id, game_state.round_number, "witch", attempt + 1, "response", response
+            )
             result = parse_json_response(
                 response,
                 required_fields=["action"],
@@ -738,7 +772,7 @@ class UnifiedGameAgent:
             )
             if result:
                 break
-            log.warning(f"[Witch AI] Attempt {attempt+1} JSON parse failed, raw: {response[:200]}")
+            log.warning(f"[Witch AI] Attempt {attempt + 1} JSON parse failed, raw: {response[:200]}")
 
         if not result:
             # Fallback: first night with victim → save; otherwise skip
@@ -772,7 +806,7 @@ class UnifiedGameAgent:
                     "action": "save",
                     "target": killed_name,
                     "reason": result.get("reasoning", "救人"),
-                }
+                },
             )
             return {"action": "save", "target": killed_name}
 
@@ -786,7 +820,7 @@ class UnifiedGameAgent:
                     "action": "poison",
                     "target": target,
                     "reason": result.get("reasoning", "毒杀嫌疑人"),
-                }
+                },
             )
             return {"action": "poison", "target": target}
 
@@ -806,11 +840,9 @@ class UnifiedGameAgent:
         memories = self._load_player_memories(hunter, game_state)
         prompt = get_hunter_shoot_prompt(hunter, memories, game_state)
 
-        self._save_debug_log(game_state, hunter.id, game_state.round_number,
-                             "hunter", 1, "prompt", prompt)
+        self._save_debug_log(game_state, hunter.id, game_state.round_number, "hunter", 1, "prompt", prompt)
         response = self._llm_call(prompt, max_tokens=400)
-        self._save_debug_log(game_state, hunter.id, game_state.round_number,
-                             "hunter", 1, "response", response)
+        self._save_debug_log(game_state, hunter.id, game_state.round_number, "hunter", 1, "response", response)
 
         # Extract player name from <target> tag
         target_match = re.search(r"<target>\s*(.+?)\s*</target>", response, re.DOTALL)
@@ -830,7 +862,9 @@ class UnifiedGameAgent:
             if player.name in choice:
                 return player.name
 
-        raise ValueError(f"[Hunter AI] {hunter.name}: invalid target '{choice}', alive={[p.name for p in alive_others]}")
+        raise ValueError(
+            f"[Hunter AI] {hunter.name}: invalid target '{choice}', alive={[p.name for p in alive_others]}"
+        )
 
     def guard_protect(self, guard: "Player", game_state: "GameState") -> str | None:
         """Guard chooses a player to protect or skips.
@@ -845,11 +879,9 @@ class UnifiedGameAgent:
         memories = self._load_player_memories(guard, game_state)
         prompt = get_guard_action_prompt(guard, memories, game_state)
 
-        self._save_debug_log(game_state, guard.id, game_state.round_number,
-                             "guard", 1, "prompt", prompt)
+        self._save_debug_log(game_state, guard.id, game_state.round_number, "guard", 1, "prompt", prompt)
         response = self._llm_call(prompt, max_tokens=400)
-        self._save_debug_log(game_state, guard.id, game_state.round_number,
-                             "guard", 1, "response", response)
+        self._save_debug_log(game_state, guard.id, game_state.round_number, "guard", 1, "response", response)
 
         # Extract player name from <target> tag, fallback to raw response
         target_match = re.search(r"<target>\s*(.+?)\s*</target>", response, re.DOTALL)
@@ -979,20 +1011,30 @@ class UnifiedGameAgent:
         temp = preset.temperature_override if preset else 0.7
 
         for attempt in range(2):
-            self._save_debug_log(game_state, player.id, game_state.round_number,
-                                 "speech", attempt + 1, "prompt", user_prompt, system_prompt)
+            self._save_debug_log(
+                game_state,
+                player.id,
+                game_state.round_number,
+                "speech",
+                attempt + 1,
+                "prompt",
+                user_prompt,
+                system_prompt,
+            )
             response = self._llm_call(
-                user_prompt, max_tokens=500, temperature=temp,
+                user_prompt,
+                max_tokens=500,
+                temperature=temp,
                 system_prompt=system_prompt,
             )
-            self._save_debug_log(game_state, player.id, game_state.round_number,
-                                 "speech", attempt + 1, "response", response)
+            self._save_debug_log(
+                game_state, player.id, game_state.round_number, "speech", attempt + 1, "response", response
+            )
             speech = self._extract_speech(response)
             if speech:
                 stickers = self._extract_stickers(response, player.personality)
                 return speech, stickers
-            log.warning(f"[Speech] {player.name} attempt {attempt+1} failed validation, "
-                        f"raw: {response[:100]}")
+            log.warning(f"[Speech] {player.name} attempt {attempt + 1} failed validation, raw: {response[:100]}")
 
         # All attempts failed — return a safe default
         log.error(f"[Speech] {player.name}: all LLM attempts failed, using default speech")
@@ -1055,19 +1097,29 @@ class UnifiedGameAgent:
         temp = max(base_temp - 0.1, 0.3)
 
         for attempt in range(2):
-            self._save_debug_log(game_state, player.id, game_state.round_number,
-                                 "vote", attempt + 1, "prompt", user_prompt, system_prompt)
+            self._save_debug_log(
+                game_state,
+                player.id,
+                game_state.round_number,
+                "vote",
+                attempt + 1,
+                "prompt",
+                user_prompt,
+                system_prompt,
+            )
             response = self._llm_call(
-                user_prompt, max_tokens=500, temperature=temp,
+                user_prompt,
+                max_tokens=500,
+                temperature=temp,
                 system_prompt=system_prompt,
             )
-            self._save_debug_log(game_state, player.id, game_state.round_number,
-                                 "vote", attempt + 1, "response", response)
+            self._save_debug_log(
+                game_state, player.id, game_state.round_number, "vote", attempt + 1, "response", response
+            )
             result = self._extract_vote(response, alive_others)
             if result:
                 return result
-            log.warning(f"[Vote] {player.name} attempt {attempt+1} failed extraction, "
-                        f"raw: {response[:100]}")
+            log.warning(f"[Vote] {player.name} attempt {attempt + 1} failed extraction, raw: {response[:100]}")
 
         # Fallback: random choice
         if alive_others:

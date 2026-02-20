@@ -1,15 +1,15 @@
 interface StickerBubbleProps {
-  stickerUrl: string;
+  stickerUrl: string
 }
 
 export function StickerBubble({ stickerUrl }: StickerBubbleProps) {
   return (
     <div
-      className="absolute z-30 animate-sticker-pop pointer-events-none origin-bottom-left"
+      className="animate-sticker-pop pointer-events-none absolute z-30 origin-bottom-left"
       style={{ bottom: 'calc(100% - 5px)', left: '40px' }}
     >
       {/* Bubble body */}
-      <div className="relative bg-card/90 backdrop-blur-sm rounded-2xl p-2 shadow-[0_0_16px_rgba(124,58,237,0.2)] border border-accent/25">
+      <div className="bg-card/90 border-accent/25 relative rounded-2xl border p-2 shadow-[0_0_16px_rgba(124,58,237,0.2)] backdrop-blur-sm">
         <img
           src={stickerUrl}
           alt="sticker"
@@ -18,7 +18,7 @@ export function StickerBubble({ stickerUrl }: StickerBubbleProps) {
         />
         {/* Tail — bottom-left corner, angled toward avatar (down-left) */}
         <div
-          className="absolute bg-card/90 border-l border-b border-accent/25"
+          className="bg-card/90 border-accent/25 absolute border-b border-l"
           style={{
             width: '10px',
             height: '10px',
@@ -29,5 +29,5 @@ export function StickerBubble({ stickerUrl }: StickerBubbleProps) {
         />
       </div>
     </div>
-  );
+  )
 }

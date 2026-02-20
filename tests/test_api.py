@@ -37,11 +37,11 @@ def test_start_game():
         print(f"Phase: {data['phase']}")
         print(f"Players: {len(data['players'])}")
 
-        for player in data['players']:
+        for player in data["players"]:
             print(f"  - {player['name']} ({player['id']}): {player['role']} [alive={player['alive']}]")
 
         print("✓ Game start test passed")
-        return data['game_id']
+        return data["game_id"]
     else:
         print(f"✗ Game start failed: {response.text}")
         return None
@@ -69,17 +69,14 @@ def test_ai_speak(game_id):
 
     # Find an AI player
     state_response = client.get(f"/api/game/state/{game_id}")
-    players = state_response.json()['players']
-    ai_player = next((p for p in players if not p['is_human']), None)
+    players = state_response.json()["players"]
+    ai_player = next((p for p in players if not p["is_human"]), None)
 
     if not ai_player:
         print("No AI player found")
         return
 
-    response = client.post("/api/game/ai-speak", json={
-        "game_id": game_id,
-        "player_id": ai_player['id']
-    })
+    response = client.post("/api/game/ai-speak", json={"game_id": game_id, "player_id": ai_player["id"]})
 
     print(f"Status: {response.status_code}")
 
@@ -135,6 +132,7 @@ def main():
     except Exception as e:
         print(f"\n✗ Test failed with error: {e}")
         import traceback
+
         traceback.print_exc()
 
 

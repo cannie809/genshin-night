@@ -48,8 +48,9 @@ class ReflectionPipeline:
         self.game_id = game_id
         self.llm_call_fn = llm_call_fn
 
-    def generate_events(self, player: "Player", game_state: "GameState",
-                         snapshot: "RoundSnapshot | None" = None) -> str:
+    def generate_events(
+        self, player: "Player", game_state: "GameState", snapshot: "RoundSnapshot | None" = None
+    ) -> str:
         """Generator step: Collect round events into structured text.
 
         Pure Python - no LLM call. Extracts from snapshot (preferred) or game_state:
@@ -66,7 +67,7 @@ class ReflectionPipeline:
         Returns:
             Structured event summary text in Chinese
         """
-        rn = self._round_num if hasattr(self, '_round_num') else game_state.round_number
+        rn = self._round_num if hasattr(self, "_round_num") else game_state.round_number
         lines = [f"# 第{rn}轮事件摘要", ""]
 
         # Read from snapshot or fall back to live game_state
@@ -94,10 +95,12 @@ class ReflectionPipeline:
         cause_map = {"werewolf_kill": "狼人击杀", "witch_poison": "女巫毒杀", "hunter_shot": "猎人击杀"}
         for d in round_deaths:
             if d.get("night", False):
-                morning_deaths.append({
-                    "name": d["player"],
-                    "cause": cause_map.get(d.get("cause", ""), d.get("cause", "未知")),
-                })
+                morning_deaths.append(
+                    {
+                        "name": d["player"],
+                        "cause": cause_map.get(d.get("cause", ""), d.get("cause", "未知")),
+                    }
+                )
 
         if morning_deaths:
             for death in morning_deaths:
@@ -143,8 +146,7 @@ class ReflectionPipeline:
 
             # Vote elimination conclusion (from cached round_deaths)
             vote_eliminated = [
-                d["player"] for d in round_deaths
-                if not d.get("night", False) and d.get("cause") == "vote_elimination"
+                d["player"] for d in round_deaths if not d.get("night", False) and d.get("cause") == "vote_elimination"
             ]
             if vote_eliminated:
                 lines.append(f"- → {'、'.join(vote_eliminated)} 被放逐出局")
@@ -166,10 +168,7 @@ class ReflectionPipeline:
         lines.append("")
 
         # === Hunter shot events (day-phase deaths from hunter) ===
-        hunter_shots = [
-            d for d in round_deaths
-            if not d.get("night", False) and d.get("cause") == "hunter_shot"
-        ]
+        hunter_shots = [d for d in round_deaths if not d.get("night", False) and d.get("cause") == "hunter_shot"]
         if hunter_shots:
             lines.append("## 猎人开枪")
             for d in hunter_shots:
@@ -331,7 +330,7 @@ class ReflectionPipeline:
   "strategy_shift": "改变策略：不再信任 player_3，优先调查其队友"
 }"""
 
-        round_num = self._round_num if hasattr(self, '_round_num') else round_num
+        round_num = self._round_num if hasattr(self, "_round_num") else round_num
 
         prompt = f"""你是{player.name}，角色是{role}，正在第{round_num}轮结束后进行复盘。
 
@@ -380,12 +379,12 @@ class ReflectionPipeline:
         response = response.strip()
 
         # Try to extract JSON from markdown code block
-        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
+        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
         if json_match:
             response = json_match.group(1)
         else:
             # Try to find raw JSON object
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
             if json_match:
                 response = json_match.group(0)
 
@@ -443,7 +442,7 @@ class ReflectionPipeline:
         """
         storage = MemoryStorage(player.id, self.memory_base, self.game_id)
         role = player.role
-        round_num = self._round_num if hasattr(self, '_round_num') else game_state.round_number
+        round_num = self._round_num if hasattr(self, "_round_num") else game_state.round_number
 
         merged_count = 0
 
@@ -578,7 +577,7 @@ class ReflectionPipeline:
         Returns:
             Formatted markdown string
         """
-        rn = self._round_num if hasattr(self, '_round_num') else game_state.round_number
+        rn = self._round_num if hasattr(self, "_round_num") else game_state.round_number
         lines = [
             f"# 第{rn}轮复盘 - {player.name}（{player.role}）",
             "",
@@ -600,8 +599,13 @@ class ReflectionPipeline:
 
         return "\n".join(lines)
 
-    def run(self, player: "Player", game_state: "GameState", round_num: int | None = None,
-            snapshot: "RoundSnapshot | None" = None) -> bool:
+    def run(
+        self,
+        player: "Player",
+        game_state: "GameState",
+        round_num: int | None = None,
+        snapshot: "RoundSnapshot | None" = None,
+    ) -> bool:
         """Run full pipeline for one player.
 
         Args:

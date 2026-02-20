@@ -103,51 +103,57 @@ class MockGameState:
 
 # ─── Preset Mock Responses ─────────────────────────────────────────
 
-ROUND_1_REFLECTION = json.dumps({
-    "new_items": [
-        {
-            "section": "### 策略笔记",
-            "content": "player_3 在发言时频繁观察其他玩家反应，行为模式可疑，可能是狼人",
-            "source": "round_1_discussion",
-        },
-        {
-            "section": "### 怀疑对象",
-            "content": "根据投票走向，player_4 和 player_3 可能是同伙关系",
-            "source": "round_1_vote",
-        },
-    ],
-    "updates": [],
-    "strategy_shift": "首轮保持低调，优先查验 player_3 确认身份",
-})
+ROUND_1_REFLECTION = json.dumps(
+    {
+        "new_items": [
+            {
+                "section": "### 策略笔记",
+                "content": "player_3 在发言时频繁观察其他玩家反应，行为模式可疑，可能是狼人",
+                "source": "round_1_discussion",
+            },
+            {
+                "section": "### 怀疑对象",
+                "content": "根据投票走向，player_4 和 player_3 可能是同伙关系",
+                "source": "round_1_vote",
+            },
+        ],
+        "updates": [],
+        "strategy_shift": "首轮保持低调，优先查验 player_3 确认身份",
+    }
+)
 
-ROUND_2_REFLECTION = json.dumps({
-    "new_items": [
-        {
-            "section": "### 验证身份",
-            "content": "查验 player_3 结果为狼人，之前的行为分析判断正确",
-            "source": "round_2_investigation",
-        },
-    ],
-    "updates": [
-        {"id": "s1r1", "delta_helpful": 1, "reason": "player_3 确认为狼人，之前的行为观察是正确的"},
-    ],
-    "strategy_shift": "已确认一名狼人，准备在适当时机跳预言家身份带节奏",
-})
+ROUND_2_REFLECTION = json.dumps(
+    {
+        "new_items": [
+            {
+                "section": "### 验证身份",
+                "content": "查验 player_3 结果为狼人，之前的行为分析判断正确",
+                "source": "round_2_investigation",
+            },
+        ],
+        "updates": [
+            {"id": "s1r1", "delta_helpful": 1, "reason": "player_3 确认为狼人，之前的行为观察是正确的"},
+        ],
+        "strategy_shift": "已确认一名狼人，准备在适当时机跳预言家身份带节奏",
+    }
+)
 
-ROUND_3_REFLECTION = json.dumps({
-    "new_items": [
-        {
-            "section": "### 策略笔记",
-            "content": "player_4 在 player_3 被放逐后发言混乱，高概率是另一名狼人",
-            "source": "round_3_discussion",
-        },
-    ],
-    "updates": [
-        {"id": "s1r1", "delta_helpful": 1, "reason": "player_3 被放逐证实了之前的分析方法有效"},
-        {"id": "s2r1", "delta_helpful": 1, "reason": "同伙关系分析被证实"},
-    ],
-    "strategy_shift": "跳预言家公开身份，引导村民投票 player_4",
-})
+ROUND_3_REFLECTION = json.dumps(
+    {
+        "new_items": [
+            {
+                "section": "### 策略笔记",
+                "content": "player_4 在 player_3 被放逐后发言混乱，高概率是另一名狼人",
+                "source": "round_3_discussion",
+            },
+        ],
+        "updates": [
+            {"id": "s1r1", "delta_helpful": 1, "reason": "player_3 被放逐证实了之前的分析方法有效"},
+            {"id": "s2r1", "delta_helpful": 1, "reason": "同伙关系分析被证实"},
+        ],
+        "strategy_shift": "跳预言家公开身份，引导村民投票 player_4",
+    }
+)
 
 
 # ─── Helpers ───────────────────────────────────────────────────────
@@ -208,24 +214,34 @@ def run_three_rounds(game_id: str, seer, players: list, mock_llm: MockLLM):
         eliminated={"name": "Charlie", "votes": 2},
     )
     storage.create_day_record_shared(1, day1)
-    night1 = generate_night_record("Alice", "seer", 1, {
-        "target": "Charlie", "result": "WEREWOLF", "thoughts": "首夜验证",
-    })
+    night1 = generate_night_record(
+        "Alice",
+        "seer",
+        1,
+        {
+            "target": "Charlie",
+            "result": "WEREWOLF",
+            "thoughts": "首夜验证",
+        },
+    )
     storage.create_night_record(1, night1)
     ei.record_death(1, "Eve", "werewolf_kill", is_night=True)
 
     gs1 = MockGameState(
-        game_id=game_id, round_number=1,
+        game_id=game_id,
+        round_number=1,
         speeches=[
             {"player": "Alice", "content": "第一轮先观察"},
             {"player": "Bob", "content": "冷静分析"},
             {"player": "Charlie", "content": "我同意Bob"},
         ],
         votes={"player_1": "player_3", "player_6": "player_3", "player_2": "player_6"},
-        players=players, alive_players=players,
+        players=players,
+        alive_players=players,
         events=[MockEvent(type="NIGHT_DEATH", round_number=1, data={"victim": "Eve", "cause": "狼人击杀"})],
         night_kills=["player_5"],
-        seer_checked="player_3", seer_checks={"player_3": "WEREWOLF"},
+        seer_checked="player_3",
+        seer_checks={"player_3": "WEREWOLF"},
     )
     pipeline1 = ReflectionPipeline(MEMORY_BASE, game_id, llm_call_fn=mock_llm)
     pipeline1.run(seer, gs1)
@@ -242,25 +258,35 @@ def run_three_rounds(game_id: str, seer, players: list, mock_llm: MockLLM):
         eliminated={"name": "Bob", "votes": 2},
     )
     storage.create_day_record_shared(2, day2)
-    night2 = generate_night_record("Alice", "seer", 2, {
-        "target": "Bob", "result": "WEREWOLF", "thoughts": "确认第二狼",
-    })
+    night2 = generate_night_record(
+        "Alice",
+        "seer",
+        2,
+        {
+            "target": "Bob",
+            "result": "WEREWOLF",
+            "thoughts": "确认第二狼",
+        },
+    )
     storage.create_night_record(2, night2)
     ei.record_death(2, "Frank", "werewolf_kill", is_night=True)
     ei.record_claim(1, "Alice", "seer", status="unverified")
 
     alive_r2 = [p for p in players if p.name not in ("Eve", "Charlie")]
     gs2 = MockGameState(
-        game_id=game_id, round_number=2,
+        game_id=game_id,
+        round_number=2,
         speeches=[
             {"player": "Alice", "content": "我查验了Charlie，他是狼人"},
             {"player": "Bob", "content": "Alice可疑"},
         ],
         votes={"player_1": "player_2", "player_4": "player_2"},
-        players=players, alive_players=alive_r2,
+        players=players,
+        alive_players=alive_r2,
         events=[MockEvent(type="NIGHT_DEATH", round_number=2, data={"victim": "Frank", "cause": "狼人击杀"})],
         night_kills=["player_6"],
-        seer_checked="player_2", seer_checks={"player_2": "WEREWOLF"},
+        seer_checked="player_2",
+        seer_checks={"player_2": "WEREWOLF"},
     )
     pipeline2 = ReflectionPipeline(MEMORY_BASE, game_id, llm_call_fn=mock_llm)
     pipeline2.run(seer, gs2)
@@ -280,14 +306,17 @@ def run_three_rounds(game_id: str, seer, players: list, mock_llm: MockLLM):
 
     alive_r3 = [p for p in players if p.name not in ("Eve", "Charlie", "Frank", "Bob")]
     gs3 = MockGameState(
-        game_id=game_id, round_number=3,
+        game_id=game_id,
+        round_number=3,
         speeches=[
             {"player": "Alice", "content": "Bob也是狼人"},
             {"player": "Diana", "content": "我们赢了"},
         ],
         votes={"player_1": "player_2", "player_4": "player_2"},
-        players=players, alive_players=alive_r3,
-        events=[], night_kills=[],
+        players=players,
+        alive_players=alive_r3,
+        events=[],
+        night_kills=[],
     )
     pipeline3 = ReflectionPipeline(MEMORY_BASE, game_id, llm_call_fn=mock_llm)
     pipeline3.run(seer, gs3)
@@ -318,7 +347,8 @@ def test_1_prompt_generation_with_memories():
 
     # Day records
     day = generate_day_record(
-        round_num=1, morning_deaths=[],
+        round_num=1,
+        morning_deaths=[],
         speeches=[
             {"player": "Alice", "content": "我觉得Charlie很可疑"},
             {"player": "Bob", "content": "我同意Alice的看法"},
@@ -329,9 +359,16 @@ def test_1_prompt_generation_with_memories():
     storage.create_day_record_shared(1, day)
 
     # Night records
-    night = generate_night_record("Alice", "seer", 1, {
-        "target": "Charlie", "result": "WEREWOLF", "thoughts": "验证怀疑",
-    })
+    night = generate_night_record(
+        "Alice",
+        "seer",
+        1,
+        {
+            "target": "Charlie",
+            "result": "WEREWOLF",
+            "thoughts": "验证怀疑",
+        },
+    )
     storage.create_night_record(1, night)
 
     # Event index
@@ -340,8 +377,7 @@ def test_1_prompt_generation_with_memories():
     ei.record_contradiction(1, ["Alice", "Frank"], "seer_conflict")
 
     # Strategy meta with high-value item (H:2)
-    meta_path = (MEMORY_BASE / GAME_1 / seer.id
-                 / "knowledge" / "role" / seer.role / "strategy_meta.json")
+    meta_path = MEMORY_BASE / GAME_1 / seer.id / "knowledge" / "role" / seer.role / "strategy_meta.json"
     tracker = StrategyTracker(meta_path)
     tracker.initialize()
     tracker.add_item("s1r1", 1, "round_1_reflection")
@@ -350,7 +386,9 @@ def test_1_prompt_generation_with_memories():
 
     # Add item to summary so _load_player_memories can find it
     km.update_knowledge_summary(
-        player_id=seer.id, role=seer.role, operation="append",
+        player_id=seer.id,
+        role=seer.role,
+        operation="append",
         section="### 策略笔记",
         content="[#s1r1] [H:0] player_3 行为可疑分析准确，验证有效",
     )
@@ -359,16 +397,12 @@ def test_1_prompt_generation_with_memories():
     ref_dir = MEMORY_BASE / GAME_1 / seer.id / "reflections"
     ref_dir.mkdir(parents=True, exist_ok=True)
     (ref_dir / "round_1_reflection.md").write_text(
-        "# 第1轮复盘 - Alice（seer）\n\n"
-        "## 策略调整\n准备下一轮跳预言家带节奏\n\n"
-        "## 新发现\n- 发现Charlie可疑\n",
+        "# 第1轮复盘 - Alice（seer）\n\n## 策略调整\n准备下一轮跳预言家带节奏\n\n## 新发现\n- 发现Charlie可疑\n",
         encoding="utf-8",
     )
 
     # Werewolf shared memory
-    km.update_werewolf_strategy(
-        "\n### 第1轮\n- 击杀Eve\n- Bob跳预言家\n"
-    )
+    km.update_werewolf_strategy("\n### 第1轮\n- 击杀Eve\n- Bob跳预言家\n")
     km.update_werewolf_threats(
         threat_updates={"Alice": 8, "Diana": 5},
         history_entry={"round": 1, "target": "Eve", "reasoning": "消除威胁"},
@@ -377,8 +411,10 @@ def test_1_prompt_generation_with_memories():
     # ── Load memories and build prompt for seer ──
     agent = UnifiedGameAgent(memory_base=MEMORY_BASE)
     gs = MockGameState(
-        game_id=GAME_1, round_number=1,
-        alive_players=players, players=players,
+        game_id=GAME_1,
+        round_number=1,
+        alive_players=players,
+        players=players,
     )
 
     memories = agent._load_player_memories(seer, gs)
@@ -447,7 +483,8 @@ def test_2_memory_lifecycle_across_rounds():
     # ── Round 1 ──
     print("\n--- Round 1 ---")
     day1 = generate_day_record(
-        round_num=1, morning_deaths=[{"name": "Eve"}],
+        round_num=1,
+        morning_deaths=[{"name": "Eve"}],
         speeches=[
             {"player": "Alice", "content": "第一轮先观察"},
             {"player": "Bob", "content": "冷静分析"},
@@ -457,25 +494,33 @@ def test_2_memory_lifecycle_across_rounds():
         eliminated={"name": "Charlie", "votes": 2},
     )
     storage.create_day_record_shared(1, day1)
-    night1 = generate_night_record("Alice", "seer", 1, {
-        "target": "Charlie", "result": "WEREWOLF",
-    })
+    night1 = generate_night_record(
+        "Alice",
+        "seer",
+        1,
+        {
+            "target": "Charlie",
+            "result": "WEREWOLF",
+        },
+    )
     storage.create_night_record(1, night1)
     ei.record_death(1, "Eve", "werewolf_kill", is_night=True)
 
     gs1 = MockGameState(
-        game_id=GAME_1, round_number=1,
+        game_id=GAME_1,
+        round_number=1,
         speeches=[
             {"player": "Alice", "content": "第一轮先观察"},
             {"player": "Bob", "content": "冷静分析"},
             {"player": "Charlie", "content": "同意Bob"},
         ],
         votes={"player_1": "player_3", "player_6": "player_3", "player_2": "player_6"},
-        players=players, alive_players=players,
-        events=[MockEvent(type="NIGHT_DEATH", round_number=1,
-                          data={"victim": "Eve", "cause": "狼人击杀"})],
+        players=players,
+        alive_players=players,
+        events=[MockEvent(type="NIGHT_DEATH", round_number=1, data={"victim": "Eve", "cause": "狼人击杀"})],
         night_kills=["player_5"],
-        seer_checked="player_3", seer_checks={"player_3": "WEREWOLF"},
+        seer_checked="player_3",
+        seer_checks={"player_3": "WEREWOLF"},
     )
     pipeline1 = ReflectionPipeline(MEMORY_BASE, GAME_1, llm_call_fn=mock_llm)
     success1 = pipeline1.run(seer, gs1)
@@ -500,7 +545,8 @@ def test_2_memory_lifecycle_across_rounds():
     # ── Round 2 ──
     print("\n--- Round 2 ---")
     day2 = generate_day_record(
-        round_num=2, morning_deaths=[{"name": "Frank"}],
+        round_num=2,
+        morning_deaths=[{"name": "Frank"}],
         speeches=[
             {"player": "Alice", "content": "Charlie是狼人"},
             {"player": "Bob", "content": "Alice可疑"},
@@ -509,34 +555,43 @@ def test_2_memory_lifecycle_across_rounds():
         eliminated={"name": "Bob", "votes": 2},
     )
     storage.create_day_record_shared(2, day2)
-    night2 = generate_night_record("Alice", "seer", 2, {
-        "target": "Bob", "result": "WEREWOLF",
-    })
+    night2 = generate_night_record(
+        "Alice",
+        "seer",
+        2,
+        {
+            "target": "Bob",
+            "result": "WEREWOLF",
+        },
+    )
     storage.create_night_record(2, night2)
     ei.record_death(2, "Frank", "werewolf_kill", is_night=True)
     ei.record_claim(1, "Alice", "seer", status="unverified")
 
     alive_r2 = [p for p in players if p.name not in ("Eve", "Charlie")]
     gs2 = MockGameState(
-        game_id=GAME_1, round_number=2,
+        game_id=GAME_1,
+        round_number=2,
         speeches=[
             {"player": "Alice", "content": "Charlie是狼人"},
             {"player": "Bob", "content": "Alice可疑"},
         ],
         votes={"player_1": "player_2", "player_4": "player_2"},
-        players=players, alive_players=alive_r2,
-        events=[MockEvent(type="NIGHT_DEATH", round_number=2,
-                          data={"victim": "Frank", "cause": "狼人击杀"})],
+        players=players,
+        alive_players=alive_r2,
+        events=[MockEvent(type="NIGHT_DEATH", round_number=2, data={"victim": "Frank", "cause": "狼人击杀"})],
         night_kills=["player_6"],
-        seer_checked="player_2", seer_checks={"player_2": "WEREWOLF"},
+        seer_checked="player_2",
+        seer_checks={"player_2": "WEREWOLF"},
     )
     pipeline2 = ReflectionPipeline(MEMORY_BASE, GAME_1, llm_call_fn=mock_llm)
     success2 = pipeline2.run(seer, gs2)
     assert success2, "Round 2 reflection should succeed"
 
     meta2 = storage.read_json(f"knowledge/role/{seer.role}/strategy_meta.json")
-    assert meta2["items"]["s1r1"]["helpful_count"] == 1, \
+    assert meta2["items"]["s1r1"]["helpful_count"] == 1, (
         f"s1r1 helpful should be 1, got {meta2['items']['s1r1']['helpful_count']}"
+    )
     print("PASS: Round 2 - s1r1 helpful_count == 1")
 
     assert "s3r2" in meta2["items"], "Round 2 should add s3r2"
@@ -549,7 +604,8 @@ def test_2_memory_lifecycle_across_rounds():
     # ── Round 3 ──
     print("\n--- Round 3 ---")
     day3 = generate_day_record(
-        round_num=3, morning_deaths=[],
+        round_num=3,
+        morning_deaths=[],
         speeches=[
             {"player": "Alice", "content": "Bob也是狼人"},
             {"player": "Diana", "content": "我们赢了"},
@@ -561,32 +617,35 @@ def test_2_memory_lifecycle_across_rounds():
 
     alive_r3 = [p for p in players if p.name not in ("Eve", "Charlie", "Frank", "Bob")]
     gs3 = MockGameState(
-        game_id=GAME_1, round_number=3,
+        game_id=GAME_1,
+        round_number=3,
         speeches=[
             {"player": "Alice", "content": "Bob也是狼人"},
             {"player": "Diana", "content": "我们赢了"},
         ],
         votes={"player_1": "player_2", "player_4": "player_2"},
-        players=players, alive_players=alive_r3,
-        events=[], night_kills=[],
+        players=players,
+        alive_players=alive_r3,
+        events=[],
+        night_kills=[],
     )
     pipeline3 = ReflectionPipeline(MEMORY_BASE, GAME_1, llm_call_fn=mock_llm)
     success3 = pipeline3.run(seer, gs3)
     assert success3, "Round 3 reflection should succeed"
 
     meta3 = storage.read_json(f"knowledge/role/{seer.role}/strategy_meta.json")
-    assert meta3["items"]["s1r1"]["helpful_count"] == 2, \
+    assert meta3["items"]["s1r1"]["helpful_count"] == 2, (
         f"s1r1 helpful should be 2, got {meta3['items']['s1r1']['helpful_count']}"
+    )
     print("PASS: Round 3 - s1r1 helpful_count == 2 (high value!)")
 
-    assert meta3["items"]["s2r1"]["helpful_count"] == 1, \
+    assert meta3["items"]["s2r1"]["helpful_count"] == 1, (
         f"s2r1 helpful should be 1, got {meta3['items']['s2r1']['helpful_count']}"
+    )
     print("PASS: Round 3 - s2r1 helpful_count == 1")
 
     # High-value items check
-    tracker = StrategyTracker(
-        MEMORY_BASE / GAME_1 / seer.id / "knowledge" / "role" / seer.role / "strategy_meta.json"
-    )
+    tracker = StrategyTracker(MEMORY_BASE / GAME_1 / seer.id / "knowledge" / "role" / seer.role / "strategy_meta.json")
     high_items = tracker.get_high_value_items(min_helpful=2)
     assert "s1r1" in high_items, "s1r1 should be in high_value_items"
     print("PASS: Round 3 - s1r1 in high_value_items")
@@ -644,7 +703,8 @@ def test_3_full_game_prompt_inspection():
     for p in players:
         storage = MemoryStorage(p.id, MEMORY_BASE, game_id)
         day = generate_day_record(
-            round_num=1, morning_deaths=[{"name": "Eve"}],
+            round_num=1,
+            morning_deaths=[{"name": "Eve"}],
             speeches=[
                 {"player": "Alice", "content": "我觉得Charlie行为可疑"},
                 {"player": "Bob", "content": "我同意，Charlie确实有问题"},
@@ -657,19 +717,38 @@ def test_3_full_game_prompt_inspection():
         storage.create_day_record_shared(1, day)
 
         if p.role == "seer":
-            night = generate_night_record(p.name, p.role, 1, {
-                "target": "Charlie", "result": "WEREWOLF",
-            })
+            night = generate_night_record(
+                p.name,
+                p.role,
+                1,
+                {
+                    "target": "Charlie",
+                    "result": "WEREWOLF",
+                },
+            )
         elif p.role == "witch":
-            night = generate_night_record(p.name, p.role, 1, {
-                "victim": "Eve", "save_used": False, "poison_used": False,
-                "reasoning": "留药到关键时刻",
-            })
+            night = generate_night_record(
+                p.name,
+                p.role,
+                1,
+                {
+                    "victim": "Eve",
+                    "save_used": False,
+                    "poison_used": False,
+                    "reasoning": "留药到关键时刻",
+                },
+            )
         elif p.role == "werewolf":
-            night = generate_night_record(p.name, p.role, 1, {
-                "target": "Eve", "discussion": "团队决定先杀Eve",
-                "reasoning": "Eve可能是预言家",
-            })
+            night = generate_night_record(
+                p.name,
+                p.role,
+                1,
+                {
+                    "target": "Eve",
+                    "discussion": "团队决定先杀Eve",
+                    "reasoning": "Eve可能是预言家",
+                },
+            )
         else:
             night = generate_night_record(p.name, p.role, 1)
         storage.create_night_record(1, night)
@@ -678,9 +757,7 @@ def test_3_full_game_prompt_inspection():
     ei.record_claim(1, "Alice", "seer", status="unverified")
     ei.record_death(1, "Charlie", "vote_elimination", is_night=False)
 
-    km.update_werewolf_strategy(
-        "\n### 第1轮\n- 击杀Eve，理由是她可能是预言家\n- Bob潜水，Charlie跳预言家\n"
-    )
+    km.update_werewolf_strategy("\n### 第1轮\n- 击杀Eve，理由是她可能是预言家\n- Bob潜水，Charlie跳预言家\n")
     km.update_werewolf_threats(
         threat_updates={"Alice": 7, "Diana": 4, "Frank": 2},
     )
@@ -688,7 +765,8 @@ def test_3_full_game_prompt_inspection():
     # Build and print prompts
     agent = UnifiedGameAgent(memory_base=MEMORY_BASE)
     gs = MockGameState(
-        game_id=game_id, round_number=1,
+        game_id=game_id,
+        round_number=1,
         players=players,
         alive_players=[p for p in players if p.name != "Eve"],
     )
@@ -710,7 +788,7 @@ def test_3_full_game_prompt_inspection():
             section = section.strip()
             if section:
                 preview = section[:300] + "..." if len(section) > 300 else section
-                print(f"\n  [Section {i+1}]")
+                print(f"\n  [Section {i + 1}]")
                 for line in preview.split("\n"):
                     print(f"  {line}")
 

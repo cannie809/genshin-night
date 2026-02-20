@@ -70,8 +70,9 @@ class GameEngine:
         mb = memory_base or self.memory_base
         return EventIndexManager(mb, game_id)
 
-    def create_game(self, mode: str = DEFAULT_MODE, preferred_role: str | None = None,
-                    human_identity: str = "local") -> GameState:
+    def create_game(
+        self, mode: str = DEFAULT_MODE, preferred_role: str | None = None, human_identity: str = "local"
+    ) -> GameState:
         """Create a new game with specified mode.
 
         Args:
@@ -137,7 +138,7 @@ class GameEngine:
         for i in range(ai_count):
             game_state.players.append(
                 Player(
-                    id=f"player_{i+1}",
+                    id=f"player_{i + 1}",
                     name=characters[i].name,
                     role=roles[i],
                     personality=characters[i].id,
@@ -251,18 +252,25 @@ class GameEngine:
                     try:
                         human_role = next((p.role for p in game_state.players if p.is_human), None)
                         result = profiler.distill_game(
-                            game_state.game_id, game_state,
-                            getattr(self, '_llm_call_fn', None),
+                            game_state.game_id,
+                            game_state,
+                            getattr(self, "_llm_call_fn", None),
                         )
                         if result["count"] > 0:
-                            log.info(f"[PlayerProfiler] Distilled {result['count']} observations from game {game_state.game_id[:8]}...")
-                            rl = profiler.reinforce(game_state.game_id, game_state.winner, human_role, matched_ids=result["matched_ids"])
+                            log.info(
+                                f"[PlayerProfiler] Distilled {result['count']} observations from game {game_state.game_id[:8]}..."
+                            )
+                            rl = profiler.reinforce(
+                                game_state.game_id, game_state.winner, human_role, matched_ids=result["matched_ids"]
+                            )
                             if rl["reinforced"] or rl["penalized"]:
                                 log.info(f"[PlayerProfiler] RL update: +{rl['reinforced']} -{rl['penalized']}")
                             profiler.decay_unreinforced(game_state.game_id, rl["adjusted_ids"])
                             profiler.prune_stale()
                         else:
-                            log.info(f"[PlayerProfiler] No observations to distill from game {game_state.game_id[:8]}...")
+                            log.info(
+                                f"[PlayerProfiler] No observations to distill from game {game_state.game_id[:8]}..."
+                            )
                     finally:
                         profiler.close()
                 except Exception as e:
@@ -421,7 +429,9 @@ class GameEngine:
         # Get victim from werewolf kill
         victim_id = game_state.night_kills[0] if game_state.night_kills else None
 
-        log.info(f"[Witch] use_save={use_save} use_poison={use_poison} victim={victim_id} save_avail={game_state.witch_save_available} poison_avail={game_state.witch_poison_available}")
+        log.info(
+            f"[Witch] use_save={use_save} use_poison={use_poison} victim={victim_id} save_avail={game_state.witch_save_available} poison_avail={game_state.witch_poison_available}"
+        )
 
         # Guard: only allow save if potion is still available
         if use_save and victim_id and game_state.witch_save_available:
@@ -498,7 +508,9 @@ class GameEngine:
         """
         dead_ids = []
 
-        log.info(f"[Morning] round={game_state.round_number} night_kills={game_state.night_kills} saved_player={game_state.saved_player}")
+        log.info(
+            f"[Morning] round={game_state.round_number} night_kills={game_state.night_kills} saved_player={game_state.saved_player}"
+        )
 
         # Process werewolf kills
         for victim_id in game_state.night_kills:
@@ -736,7 +748,13 @@ class GameEngine:
                     )
                 )
 
-        return {"success": True, "eliminated": eliminated.name, "votes": max_votes, "vote_details": vote_details, "vote_summary": vote_summary}
+        return {
+            "success": True,
+            "eliminated": eliminated.name,
+            "votes": max_votes,
+            "vote_details": vote_details,
+            "vote_summary": vote_summary,
+        }
 
     def process_hunter_shoot(self, game_state: GameState, target_id: str | None) -> dict[str, any]:
         """Process hunter shooting after death.
@@ -804,9 +822,15 @@ class GameEngine:
 
         return {"success": True, "target": target.name, "hunter": hunter_name}
 
-    def end_round(self, game_state: GameState, *, round_num: int | None = None,
-                  snapshot: RoundSnapshot | None = None,
-                  votes_snapshot: dict | None = None, speeches_snapshot: list | None = None) -> None:
+    def end_round(
+        self,
+        game_state: GameState,
+        *,
+        round_num: int | None = None,
+        snapshot: RoundSnapshot | None = None,
+        votes_snapshot: dict | None = None,
+        speeches_snapshot: list | None = None,
+    ) -> None:
         """End current round and create memory records.
 
         Args:
@@ -842,10 +866,7 @@ class GameEngine:
         # Create day record (shared) — only night deaths go in morning announcement
         event_index = self._get_event_index(game_state.game_id, game_state.memory_base)
         index_data = event_index._read_index()
-        night_deaths = [
-            d for d in index_data.get("deaths", [])
-            if d["round"] == rn and d.get("night", False)
-        ]
+        night_deaths = [d for d in index_data.get("deaths", []) if d["round"] == rn and d.get("night", False)]
         morning_deaths = [{"name": d["player"]} for d in night_deaths]
 
         # Get voting results
@@ -888,9 +909,9 @@ class GameEngine:
         # Run reflection pipeline for alive AI players
         self._run_reflections(game_state, round_num=rn, snapshot=snapshot)
 
-    def write_night_records(self, game_state: GameState, *,
-                            round_num: int | None = None,
-                            snapshot: RoundSnapshot | None = None) -> None:
+    def write_night_records(
+        self, game_state: GameState, *, round_num: int | None = None, snapshot: RoundSnapshot | None = None
+    ) -> None:
         """Write night action records for all players.
 
         Safe to call multiple times per round (overwrites existing files).
@@ -909,8 +930,9 @@ class GameEngine:
                 action=action_data,
             )
 
-    def _get_player_night_action(self, player: Player, game_state: GameState,
-                                 snapshot: RoundSnapshot | None = None) -> dict[str, any] | None:
+    def _get_player_night_action(
+        self, player: Player, game_state: GameState, snapshot: RoundSnapshot | None = None
+    ) -> dict[str, any] | None:
         """Get night action data for a player's memory record.
 
         Args:
@@ -1006,8 +1028,9 @@ class GameEngine:
         """
         self._llm_call_fn = fn
 
-    def _run_reflections(self, game_state: GameState, round_num: int | None = None,
-                         snapshot: RoundSnapshot | None = None) -> None:
+    def _run_reflections(
+        self, game_state: GameState, round_num: int | None = None, snapshot: RoundSnapshot | None = None
+    ) -> None:
         """Run reflection pipeline for all alive AI players.
 
         Each AI player gets one LLM call for reflection.
@@ -1019,7 +1042,7 @@ class GameEngine:
         """
         # Need access to the agent's LLM call function
         # This will be set by the app layer when creating the engine
-        if not hasattr(self, '_llm_call_fn') or not self._llm_call_fn:
+        if not hasattr(self, "_llm_call_fn") or not self._llm_call_fn:
             log.info("[Reflection] No LLM function set, skipping reflections")
             return
 
