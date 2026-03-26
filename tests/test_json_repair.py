@@ -1,6 +1,10 @@
-import pytest
-import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from backend.ai.output_sanitizer import parse_json_response
+
 
 def test_parse_json_response_unquoted_keys():
     """Test that unquoted keys are correctly repaired."""
@@ -8,6 +12,7 @@ def test_parse_json_response_unquoted_keys():
     expected = {"name": "Jules", "role": "Engineer"}
     result = parse_json_response(response)
     assert result == expected
+
 
 def test_parse_json_response_with_url():
     """Test that URLs are not corrupted during JSON repair.
@@ -20,6 +25,7 @@ def test_parse_json_response_with_url():
     result = parse_json_response(response)
     assert result == expected
 
+
 def test_parse_json_response_trailing_comma():
     """Test that trailing commas are correctly repaired."""
     response = '{"key": "value",}'
@@ -27,12 +33,14 @@ def test_parse_json_response_trailing_comma():
     result = parse_json_response(response)
     assert result == expected
 
+
 def test_parse_json_response_nested():
     """Test repair logic on nested objects."""
     response = '{outer: {inner: "value",},}'
     expected = {"outer": {"inner": "value"}}
     result = parse_json_response(response)
     assert result == expected
+
 
 def test_parse_json_response_valid():
     """Test that valid JSON is parsed correctly without changes."""

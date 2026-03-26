@@ -1,5 +1,10 @@
-import pytest
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from backend.ai.output_sanitizer import parse_json_response, sanitize_speech
+
 
 def test_parse_json_response_direct():
     """Test Strategy 1: Direct JSON parse."""
@@ -10,20 +15,22 @@ def test_parse_json_response_direct():
     # Should fail for invalid JSON
     assert parse_json_response('{"key": "value"') is None
 
+
 def test_parse_json_response_code_block():
     """Test Strategy 2: Extract JSON from markdown code blocks."""
     # With json tag
-    response = "Here is the result:\n```json\n{\"key\": \"value\"}\n```\nHope it helps."
+    response = 'Here is the result:\n```json\n{"key": "value"}\n```\nHope it helps.'
     assert parse_json_response(response) == {"key": "value"}
 
     # Without json tag
-    response = "```\n{\"foo\": \"bar\"}\n```"
+    response = '```\n{"foo": "bar"}\n```'
     assert parse_json_response(response) == {"foo": "bar"}
+
 
 def test_parse_json_response_regex():
     """Test Strategy 3: Find JSON object with regex and repair."""
     # SURROUNDED by text
-    response = "The answer is {\"key\": \"value\"} strictly."
+    response = 'The answer is {"key": "value"} strictly.'
     assert parse_json_response(response) == {"key": "value"}
 
     # Repair: trailing comma in object
@@ -37,6 +44,7 @@ def test_parse_json_response_regex():
     # Repair: unquoted keys
     response = '{key: "value", another_key: 123}'
     assert parse_json_response(response) == {"key": "value", "another_key": 123}
+
 
 def test_parse_json_response_field_extraction():
     """Test Strategy 4: Line-by-line field extraction."""
@@ -60,7 +68,8 @@ def test_parse_json_response_field_extraction():
     # Partial match (at least half)
     response = "name: 芭芭拉\nother: stuff"
     result = parse_json_response(response, required_fields=required_fields)
-    assert result is None # Only 1 out of 2 found
+    assert result is None  # Only 1 out of 2 found
+
 
 def test_parse_json_response_validation():
     """Test validation of required fields and field validators."""
@@ -78,6 +87,7 @@ def test_parse_json_response_validation():
     # Invalid value
     response = '{"action": "dance", "target": "player1"}'
     assert parse_json_response(response, required_fields, field_validators) is None
+
 
 def test_parse_json_response_value_sanitization():
     """Test sanitization of string values in JSON."""
@@ -107,6 +117,7 @@ def test_sanitize_speech_tags_and_headers():
     text = "# Speech\n我是迪卢克。"
     assert sanitize_speech(text) == "我是迪卢克"
 
+
 def test_sanitize_speech_english_filtering():
     """Test filtering of English content."""
     # Pure English lines
@@ -120,6 +131,7 @@ def test_sanitize_speech_english_filtering():
     # English phrases
     text = "我是西风骑士团的琴，i suspect you are a werewolf。"
     assert sanitize_speech(text) == "我是西风骑士团的琴"
+
 
 def test_sanitize_speech_meta_prefixes():
     """Test removal of meta-information prefixes."""
@@ -138,6 +150,7 @@ def test_sanitize_speech_meta_prefixes():
 
     text = "声音检查：一切正常。你好呀朋友。"
     assert sanitize_speech(text) == "你好呀朋友"
+
 
 def test_sanitize_speech_cleanup_and_validation():
     """Test whitespace, punctuation cleanup and Chinese validation."""
