@@ -193,9 +193,11 @@ def _try_regex_parse(response: str) -> dict | None:
             text = re.sub(r",\s*}", "}", text)
             text = re.sub(r",\s*]", "]", text)
             # Fix unquoted keys
-            text = re.sub(r"(\w+)\s*:", r'"\1":', text)
+            text = re.sub(r"([{,]\s*)(\w+)\s*:", r'\1"\2":', text)
             try:
-                return json.loads(text)
+                result = json.loads(text)
+                log.info("Successfully repaired JSON with fallback logic")
+                return result
             except json.JSONDecodeError:
                 pass
     return None
@@ -232,7 +234,8 @@ def _sanitize_json_value(value: str) -> str:
     # Remove any residual XML tags
     value = re.sub(r"</?[a-zA-Z][a-zA-Z0-9]*[^>]*>", "", value)
     # Remove field-name echo prefixes (e.g., "kill_reason: ..." or "kill_reason：...")
-    value = re.sub(r"^[a-z_]+\s*[：:]\s*", "", value)
+    # Use negative lookahead to avoid stripping protocol in URLs (e.g., "http://")
+    value = re.sub(r"^[a-z_]+\s*[：:]\s*(?!//)", "", value)
     # Remove markdown bold/italic markers
     value = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", value)
     return value.strip()
