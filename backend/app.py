@@ -2246,9 +2246,17 @@ if FRONTEND_DIST.exists():
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
         """Serve frontend SPA - returns index.html for all non-API routes."""
-        file_path = FRONTEND_DIST / full_path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
+        try:
+            # Securely resolve path and check if it's within FRONTEND_DIST
+            requested_path = (FRONTEND_DIST / full_path).resolve()
+            base_path = FRONTEND_DIST.resolve()
+
+            if requested_path.exists() and requested_path.is_file() and base_path in requested_path.parents:
+                return FileResponse(requested_path)
+        except (OSError, RuntimeError, ValueError):
+            # Fallback to index.html for any path resolution errors
+            pass
+
         return FileResponse(FRONTEND_DIST / "index.html")
 
 
