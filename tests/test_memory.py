@@ -124,7 +124,6 @@ def test_records_manager():
         ],
         votes={"Player 1": "Player 2", "Player 2": "Player 5", "Player 4": "Player 2"},
         eliminated={"name": "Player 2", "votes": 2},
-        special_events=[{"description": "Player 2 was a werewolf!"}],
     )
 
     # Read back
