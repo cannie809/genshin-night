@@ -39,9 +39,12 @@ load_dotenv(Path(__file__).parent.parent / ".env.local")
 app = FastAPI(title="Werewolf Game API", version="1.0.0")
 
 # Configure CORS
+allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+allowed_origins = [o.strip() for o in allowed_origins_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify actual frontend origin
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
