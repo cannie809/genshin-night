@@ -71,31 +71,73 @@ class GameEngine:
         return EventIndexManager(mb, game_id)
 
     def create_game(
-        self, mode: str = DEFAULT_MODE, preferred_role: str | None = None, human_identity: str = "local"
+        self,
+        mode: str = DEFAULT_MODE,
+        preferred_role: str | None = None,
+        human_identity: str = "local",
+        human_slots: list[dict] | None = None,
     ) -> GameState:
         """Create a new game with specified mode.
 
         Args:
             mode: Game mode key (e.g., "classic_6_witch")
-            preferred_role: Role the human player wants, or None for random
-            human_identity: Player identity for per-user memory isolation
+            preferred_role: Legacy single-player role preference. Ignored when
+                `human_slots` is provided. Kept so single-player callers keep
+                working without change.
+            human_identity: Legacy single-human identity. Ignored when
+                `human_slots` is provided. Default "local" for anonymous dev.
+            human_slots: Optional list of human slots, each a dict with keys
+                `identity` (required), `display_name` (optional),
+                `preferred_role` (optional). Slot count determines the number
+                of human players; the rest fill with AI. When None, falls back
+                to a single human slot from `human_identity` / `preferred_role`.
 
         Returns:
             Initialized game state
 
         Raises:
-            ValueError: If mode is invalid
+            ValueError: If mode is invalid, or human_slots exceeds role count,
+                or identities aren't unique.
         """
         if mode not in GAME_MODES:
             raise ValueError(f"Invalid game mode: {mode}. Available: {list(GAME_MODES.keys())}")
 
         game_config = GAME_MODES[mode]
         game_id = str(uuid.uuid4())
+        total_slots = len(game_config.roles)
 
-        # Player-scoped memory base: .memory/{human_identity}/
-        player_memory_base = self.memory_base / human_identity
+        # Normalize human_slots — single-player path builds one slot from legacy args.
+        if not human_slots:
+            human_slots = [
+                {
+                    "identity": human_identity,
+                    "display_name": None,
+                    "preferred_role": preferred_role,
+                }
+            ]
 
-        # Create game state
+        # Validate
+        if len(human_slots) > total_slots:
+            raise ValueError(
+                f"human_slots count ({len(human_slots)}) exceeds mode total ({total_slots})"
+            )
+        identities = [s["identity"] for s in human_slots]
+        if len(set(identities)) != len(identities):
+            raise ValueError(f"human_slots identities must be unique, got {identities}")
+
+        # Memory base: owned by the first human's identity. Multi-human shared
+        # games currently store AI/profiler memory under this one directory.
+        # Full per-human isolation for shared games is a known limitation.
+        primary_identity = human_slots[0]["identity"]
+        if len(human_slots) > 1:
+            log.warning(
+                "[create_game] multi-human game uses primary identity '%s' for memory_base; "
+                "secondary humans (%s) do not get isolated profiler memory yet",
+                primary_identity,
+                [s["identity"] for s in human_slots[1:]],
+            )
+        player_memory_base = self.memory_base / primary_identity
+
         game_state = GameState(
             game_id=game_id,
             mode=mode,
@@ -103,57 +145,95 @@ class GameEngine:
             round_number=0,
             day_number=0,
             memory_base=player_memory_base,
-            human_identity=human_identity,
+            human_identities=set(identities),
         )
 
-        # Assign roles
-        roles = game_config.roles.copy()
-        random.shuffle(roles)
+        # Role assignment: honor each human's preferred_role if still available
+        # (list-order priority). Collisions fall back to random from remainder.
+        roles_pool = game_config.roles.copy()
+        random.shuffle(roles_pool)
+        human_roles: list[str] = []
+        for slot in human_slots:
+            pref = slot.get("preferred_role")
+            if pref and pref in roles_pool:
+                roles_pool.remove(pref)
+                human_roles.append(pref)
+            else:
+                if pref:
+                    log.warning(
+                        "[create_game] identity=%s requested role=%s but it was "
+                        "already taken or not in pool; assigning random",
+                        slot["identity"],
+                        pref,
+                    )
+                human_roles.append(roles_pool.pop(0))
 
-        # If player has a preferred role, ensure they get it
-        if preferred_role and preferred_role in roles:
-            roles.remove(preferred_role)
-            human_role = preferred_role
-        else:
-            human_role = roles.pop(0)
+        # Randomize human slot positions so humans aren't always player_0..N-1.
+        total_player_ids = [f"player_{i}" for i in range(total_slots)]
+        random.shuffle(total_player_ids)
+        human_player_ids = total_player_ids[: len(human_slots)]
+        ai_player_ids = total_player_ids[len(human_slots) :]
 
-        # Create players
-        # Player 0 is always the human player
-        game_state.players.append(
-            Player(
-                id="player_0",
-                name="旅行者",
-                role=human_role,
+        ai_count = len(ai_player_ids)
+        characters = select_characters(ai_count) if ai_count else []
+
+        # Build a temporary list keyed by slot id so we can insert in order.
+        # Human character names distinguish the two Traveler twins (空/荧),
+        # otherwise AI dialogue + memory gets confused when both humans are
+        # literally named "旅行者". Single-player: random pick one. Two
+        # humans: one gets each, random assignment.
+        traveler_names = ["旅行者·空", "旅行者·荧"]
+        random.shuffle(traveler_names)
+        # Distinct assets per twin. 荧 has a 256x256 portrait; 空 falls
+        # back to the generic Traveler icon until a matching boy portrait
+        # asset is placed at /avatars/UI_AvatarIcon_PlayerBoy.png.
+        traveler_avatars = {
+            "旅行者·空": "/avatars/UI_AvatarIcon_Traveler.png",
+            "旅行者·荧": "/avatars/UI_AvatarIcon_PlayerGirl.png",
+        }
+        slot_to_player: dict[str, Player] = {}
+        for i, (slot, player_id, role) in enumerate(
+            zip(human_slots, human_player_ids, human_roles, strict=True)
+        ):
+            human_name = traveler_names[i]
+            slot_to_player[player_id] = Player(
+                id=player_id,
+                name=human_name,
+                role=role,
                 personality="HUMAN",
-                avatar_url="/avatars/UI_AvatarIcon_Traveler.png",
+                # Fall back to the generic Traveler avatar if the boy/girl
+                # asset is missing. Kept non-silent by logging at load-time
+                # rather than here (asset lookup is static).
+                avatar_url=traveler_avatars.get(
+                    human_name, "/avatars/UI_AvatarIcon_Traveler.png"
+                ),
                 is_human=True,
+                identity=slot["identity"],
+                display_name=slot.get("display_name"),
                 alive=True,
             )
-        )
-
-        # Create AI players (roles list now has the remaining roles after human's was taken)
-        ai_count = len(roles)
-        characters = select_characters(ai_count)
-
-        for i in range(ai_count):
-            game_state.players.append(
-                Player(
-                    id=f"player_{i + 1}",
-                    name=characters[i].name,
-                    role=roles[i],
-                    personality=characters[i].id,
-                    avatar_url=characters[i].avatar_url,
-                    is_human=False,
-                    alive=True,
-                )
+        for idx, player_id in enumerate(ai_player_ids):
+            char = characters[idx]
+            slot_to_player[player_id] = Player(
+                id=player_id,
+                name=char.name,
+                role=roles_pool[idx],
+                personality=char.id,
+                avatar_url=char.avatar_url,
+                is_human=False,
+                alive=True,
             )
 
-        # Clean up old game directories (keep most recent 10) — scoped to this player
+        # Append in slot-id order for stable iteration order.
+        for i in range(total_slots):
+            game_state.players.append(slot_to_player[f"player_{i}"])
+
+        # Clean up old game directories (keep most recent 10) — scoped to primary identity.
         profiler = PlayerProfiler(player_memory_base)
         try:
             cleaned = profiler.cleanup_old_games()
             if cleaned:
-                log.info(f"[PlayerProfiler] Cleaned {cleaned} old game directories for {human_identity}")
+                log.info(f"[PlayerProfiler] Cleaned {cleaned} old game directories for {primary_identity}")
         finally:
             profiler.close()
 
@@ -210,6 +290,66 @@ class GameEngine:
         werewolves = [p for p in game_state.players if p.role == "werewolf"]
         if werewolves:
             knowledge_manager.initialize_werewolf_shared()
+
+    def record_ack(
+        self, game_state: GameState, identity: str, kind: str
+    ) -> tuple[bool, int, int]:
+        """Record a phase-transition ack from one human identity.
+
+        Args:
+            game_state: The shared game state.
+            identity: The human identity that is ack'ing.
+            kind: "morning" (NIGHT→DAY) or "night" (DAY→NIGHT).
+
+        Returns:
+            Tuple `(quorum_reached, acked, total)`. `quorum_reached` is True
+            iff every alive human has ack'd. Used by HTTP endpoints to decide
+            whether to actually perform the phase transition.
+
+        Raises:
+            ValueError: If `kind` is unknown or identity isn't a participant.
+        """
+        if kind not in ("morning", "night"):
+            raise ValueError(f"unknown ack kind: {kind}")
+        if identity not in game_state.human_identities:
+            # Caller bug — identity not in this game at all. Loud, not silent.
+            log.warning(
+                "[record_ack] identity=%s is not a participant of game=%s (participants=%s)",
+                identity,
+                game_state.game_id,
+                game_state.human_identities,
+            )
+            raise ValueError(f"identity {identity!r} not a participant")
+
+        # Use the all-dead fallback quorum so that pure-spectator rounds
+        # still require every human to click through the transition.
+        quorum = game_state.ack_quorum_identities
+        # If the caller is excluded from quorum (edge case: somehow not a
+        # participant), log loudly and ignore.
+        if identity not in quorum:
+            log.warning(
+                "[record_ack] identity=%s not in quorum for %s ack; ignoring",
+                identity,
+                kind,
+            )
+            acks = game_state.morning_acks if kind == "morning" else game_state.night_acks
+            return (acks >= quorum, len(acks & quorum), len(quorum))
+
+        acks = game_state.morning_acks if kind == "morning" else game_state.night_acks
+        acks.add(identity)
+        effective = acks & quorum
+        return (effective >= quorum, len(effective), len(quorum))
+
+    def vote_progress(self, game_state: GameState) -> tuple[int, int]:
+        """Return (submitted, total) for the DAY_VOTE blind progress counter.
+
+        The UI only ever sees this aggregate, never individual votes, to
+        prevent vote-buying and social pressure during the submission window.
+        """
+        alive = game_state.alive_players
+        total = len(alive)
+        submitted = sum(1 for p in alive if p.id in game_state.votes)
+        return submitted, total
 
     def next_phase(self, game_state: GameState) -> GamePhase:
         """Transition to the next game phase.

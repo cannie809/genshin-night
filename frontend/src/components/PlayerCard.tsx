@@ -115,7 +115,7 @@ function isGuessable(player: Player): boolean {
 }
 
 export function PlayerCard({ player, isSelected, onClick, winner }: PlayerCardProps) {
-  const { gameState, playerGuesses, setPlayerGuess, activeStickerBubbles } = useGameStore()
+  const { gameState, playerGuesses, setPlayerGuess, activeStickerBubbles, playerId } = useGameStore()
   const [expanded, setExpanded] = useState(false)
   const bubble = activeStickerBubbles.find((b) => b.playerName === player.name)
 
@@ -180,6 +180,9 @@ export function PlayerCard({ player, isSelected, onClick, winner }: PlayerCardPr
                 </div>
               )}
             </div>
+            {/* Always show the in-game character name (旅行者·空/荧 for humans,
+                AI character names for AI). Room nickname deliberately hidden
+                to keep the player panel clean and avoid confusing the AI. */}
             <span className="text-sm font-semibold">{player.name}</span>
           </div>
           {!player.is_human && (
@@ -190,10 +193,20 @@ export function PlayerCard({ player, isSelected, onClick, winner }: PlayerCardPr
               AI
             </Badge>
           )}
-          {player.is_human && (
+          {/* Another human player (not self): gold badge. */}
+          {player.is_human && player.id !== playerId && (
             <Badge
               variant="outline"
-              className="bg-accent/10 text-accent border-accent/30 h-5 text-[10px]"
+              className="h-5 border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-200"
+            >
+              玩家
+            </Badge>
+          )}
+          {/* Self: purple badge to stand out from other humans. */}
+          {player.is_human && player.id === playerId && (
+            <Badge
+              variant="outline"
+              className="h-5 border-purple-500/40 bg-purple-500/10 text-[10px] text-purple-200"
             >
               你
             </Badge>

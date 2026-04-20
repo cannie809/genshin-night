@@ -10,8 +10,8 @@
   <img src="https://img.shields.io/badge/python-3.13+-blue?logo=python&logoColor=white" alt="Python"/>
   <img src="https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white" alt="React"/>
   <img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" alt="FastAPI"/>
-  <img src="https://img.shields.io/badge/tests-39_passed-brightgreen?logo=pytest&logoColor=white" alt="Tests"/>
-  <img src="https://img.shields.io/badge/version-2.0.0-purple" alt="Version"/>
+  <img src="https://img.shields.io/badge/tests-93_passed-brightgreen?logo=pytest&logoColor=white" alt="Tests"/>
+  <img src="https://img.shields.io/badge/version-2.3.0-purple" alt="Version"/>
 </p>
 
 ---
@@ -77,10 +77,11 @@ docker run -d -p 8000:8000 --env-file .env.local genshin-night
 
 ### 4️⃣ 开始游戏
 
-1. 🎭 选择模式（女巫局 / 猎人局 / 守卫局）和你想要的角色
-2. 🌙 进入夜晚 → 按角色行动（狼人杀人 / 预言家查验 / 女巫用药 / 守卫守护）
-3. ☀️ 天亮 → 听 AI 发言 → 轮到你发言 → 全体投票
-4. 🔄 循环，直到一方阵营胜利
+1. 🏠 进入大厅，创建或加入一间房间（想一个人单打就自己开房，想联机就把房间号发给朋友）
+2. 🎭 选择模式（女巫局 / 猎人局 / 守卫局）和你想要的角色
+3. 🌙 进入夜晚 → 按角色行动（狼人杀人 / 预言家查验 / 女巫用药 / 守卫守护）
+4. ☀️ 天亮 → 听 AI 发言 → 轮到你发言 → 全体投票
+5. 🔄 循环，直到一方阵营胜利
 
 ---
 
@@ -100,7 +101,7 @@ docker run -d -p 8000:8000 --env-file .env.local genshin-night
 
 ## 🌟 AI 角色阵容
 
-每局随机从 10 名原神角色中选出 5 名担任你的对手/队友：
+每局随机从 10 名原神角色中选出 4–5 名担任你的对手/队友（具体数量取决于真人玩家人数）：
 
 <table>
 <tr>
@@ -194,22 +195,43 @@ pytest tests/test_api.py::test_root
 ## 📝 更新日志
 
 <details open>
-<summary><b>v2.1.0</b> (2026-02-17) — 🚀 Docker 部署 + 多用户隔离</summary>
+<summary><b>v2.3.0</b> (2026-04-20) — 👥 多人房间模式</summary>
 
-- ✅ Docker 一体化部署：`Dockerfile` + `render.yaml`，支持 Render 一键部署
-- ✅ Access Key 鉴权 + 每用户记忆隔离
+- ✅ 支持双人联机：8 间独立房间，每间容纳 1-2 名真人玩家（其余由 AI 补齐到 6 人局）
+- ✅ 双人局随机分配「旅行者·空」与「旅行者·荧」两位身份，避免 AI 把你俩混为一人
+- ✅ 匿名登录，自动生成昵称（如 `Traveler_abcd`），可随时修改
+- ✅ 偏好身份对其他玩家保密，开局按偏好优先分配
+- ✅ 房主负责选模式和开始游戏；离开后房主自动移交给下一位
+- ✅ 关键节点（进入夜晚/白天、投票、狼人击杀）需要全员确认才推进
+- ✅ 投票盲投，只显示进度计数，不泄露谁投了谁
+- ✅ 一局结束后「返回房间」即可开启新局，保留偏好身份
 </details>
 
 <details>
-<summary><b>v2.0.0</b> (2026-02-16) — ⚡ Prefetch 预计算管线 + 编排竞态修复</summary>
+<summary><b>v2.2.0</b> (2026-03-26) — 🔒 安全与稳定性</summary>
 
-- ✅ `PrefetchManager` 异步预计算框架：用户操作间隙预计算 LLM 结果，带缓存与超时
-- ✅ Prefetch 循环链路：投票→夜间行动→狼人讨论→发言→投票，miss 时自动降级为同步执行
-- ✅ 修复 `end_round` 与夜间 prefetch 竞态：串行链式执行，确保记忆写入+反思完成后再构建夜间 prompt
-- ✅ 延迟胜利揭示：游戏结束时不立即中断，死亡玩家仍体验完整的 夜晚→天亮→结算 流程
-- ✅ 首页重设计：原神主题着陆页 + 角色轮播
-- ✅ 夜间非行动玩家身份隐藏 + 猎人身份仅开枪时揭示
-- 🐛 修复反思幻觉：投票事件摘要补充放逐结论，防止 LLM 编造错误信息
+- ✅ 部署安全加固：静态资源路径遍历修复、CORS 策略收紧到可信来源
+- ✅ AI 回复更稳：加强了 LLM JSON 输出解析，遇到格式异常能自动修复而不是报错
+- ✅ 更好的自动化测试覆盖，保证回归不出错
+
+> 历史说明：v2.2.0 原定引入的"双人房间系统"最终被 v2.3.0 重写替换，本条目仅保留实际进入主线的安全与测试改进。
+</details>
+
+<details>
+<summary><b>v2.1.0</b> (2026-02-17) — 🚀 Docker 部署</summary>
+
+- ✅ Docker 一体化打包（`Dockerfile` + `render.yaml`），支持 Render 一键部署
+- ✅ 每个账号的游戏记忆单独存储，互不干扰
+</details>
+
+<details>
+<summary><b>v2.0.0</b> (2026-02-16) — ⚡ 流畅度提升</summary>
+
+- ✅ 后台预计算：AI 会趁你思考的间隙提前想好下一步（夜间行动、白天发言、投票），你操作完几乎无需等待
+- ✅ 完整结算体验：哪怕游戏已经分出胜负，死亡玩家也能完整看完 夜晚→天亮→投票 的剧情过渡
+- ✅ 首页重设计：原神主题着陆页 + 角色轮播动画
+- ✅ 夜间身份保护：神职在自己行动阶段之外会被 UI 隐藏；猎人身份仅在实际开枪时揭示
+- 🐛 修复 AI 复盘偶尔编造投票结果的问题
 </details>
 
 <details>

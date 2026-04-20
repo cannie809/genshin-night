@@ -1,102 +1,14 @@
-import { useState, useEffect, useRef } from 'react'
-import { Moon, RotateCw, X, RefreshCw, Trophy } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Moon, RotateCw, X, RefreshCw, Trophy, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useGameStore } from '../store/gameStore'
-import { gameApi } from '../api/client'
+import { gameApi, roomApi } from '../api/client'
 import { PhaseIndicator } from './PhaseIndicator'
 import { PlayerGrid } from './PlayerGrid'
 import { ActionPanel } from './ActionPanel'
 import { GameLog } from './GameLog'
-import { CreateGameForm } from './CreateGameForm'
 import { PhaseTransition } from './PhaseTransition'
 import { cn } from '@/lib/utils'
-
-// Scrolling avatar carousel (center-big, edges-small)
-function AvatarCarousel({ avatars }: { avatars: string[] }) {
-  const trackRef = useRef<HTMLDivElement>(null)
-  const wrapRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const track = trackRef.current
-    const wrap = wrapRef.current
-    if (!track || !wrap || avatars.length === 0) return
-
-    let offset = 0
-    let prev = performance.now()
-    let raf: number
-    const step = 72 // 56px avatar + 16px gap
-    const total = avatars.length * step
-
-    const tick = (now: number) => {
-      const dt = (now - prev) / 1000
-      prev = now
-      offset = (offset + 28 * dt) % total
-
-      const w = wrap.clientWidth
-      const cx = w / 2
-      track.style.transform = `translateX(${-offset}px)`
-
-      const kids = track.children as HTMLCollectionOf<HTMLElement>
-      for (let i = 0; i < kids.length; i++) {
-        const x = i * step + step / 2 - offset
-        const d = Math.abs(x - cx) / (w / 2)
-        const s = Math.max(0.55, 1 - d * 0.45)
-        const o = Math.max(0.2, 1 - d * 0.6)
-        kids[i].style.transform = `scale(${s})`
-        kids[i].style.opacity = `${o}`
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [avatars])
-
-  if (avatars.length === 0) return null
-  // Triple for seamless wrap
-  const items = [...avatars, ...avatars, ...avatars]
-
-  return (
-    <div
-      ref={wrapRef}
-      className="w-full max-w-md overflow-hidden"
-      style={{
-        maskImage: 'linear-gradient(to right, transparent, black 12%, black 88%, transparent)',
-        WebkitMaskImage:
-          'linear-gradient(to right, transparent, black 12%, black 88%, transparent)',
-      }}
-    >
-      <div ref={trackRef} className="flex items-center gap-4" style={{ willChange: 'transform' }}>
-        {items.map((src, i) => (
-          <img
-            key={i}
-            src={src}
-            alt=""
-            className="size-14 shrink-0 rounded-full border-2 border-amber-500/30 object-cover"
-            style={{ willChange: 'transform, opacity' }}
-            draggable={false}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// Deterministic constellation stars
-const STARS = Array.from({ length: 50 }, (_, i) => ({
-  x: ((i * 37 + 13) % 97) + 1,
-  y: ((i * 53 + 7) % 97) + 1,
-  size: (i % 3) * 0.5 + 1,
-  delay: ((i * 7) % 40) / 10,
-  dur: (i % 3) + 2.5,
-}))
-
-// Deterministic floating particles
-const PARTICLES = Array.from({ length: 8 }, (_, i) => ({
-  x: ((i * 13 + 5) % 90) + 5,
-  dur: 6 + (i % 4) * 2,
-  delay: i * 1.5,
-  opacity: 0.3 + (i % 3) * 0.15,
-}))
 
 const ROLE_EMOJI: Record<string, string> = {
   werewolf: '🐺',
@@ -117,23 +29,16 @@ const ROLE_LABEL: Record<string, string> = {
 }
 
 export function GameBoard() {
-  const { gameState, playerId } = useGameStore()
+  const gameState = useGameStore((s) => s.gameState)
+  const playerId = useGameStore((s) => s.playerId)
+  const currentRoomId = useGameStore((s) => s.currentRoomId)
+  const setCurrentRoomId = useGameStore((s) => s.setCurrentRoomId)
+  const setGameState = useGameStore((s) => s.setGameState)
+
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>()
   const [refreshing, setRefreshing] = useState(false)
   const [showWinnerOverlay, setShowWinnerOverlay] = useState(false)
-  const [carouselAvatars, setCarouselAvatars] = useState<string[]>([])
-
-  // Fetch character pool once for landing carousel
-  useEffect(() => {
-    if (!gameState) {
-      gameApi
-        .getCharacters()
-        .then((chars) => {
-          setCarouselAvatars(chars.map((c) => c.avatar_url))
-        })
-        .catch(() => {})
-    }
-  }, [!gameState])
+  const [returningLobby, setReturningLobby] = useState(false)
 
   // Show winner overlay when game ends
   useEffect(() => {
@@ -176,77 +81,31 @@ export function GameBoard() {
     return () => clearInterval(timer)
   }, [gameState?.game_id, gameState?.ai_speaking, playerId])
 
-  // If game not created, show Genshin-themed landing page
-  if (!gameState) {
-    return (
-      <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden p-6">
-        {/* Constellation star field */}
-        <div className="pointer-events-none absolute inset-0">
-          {STARS.map((s, i) => (
-            <div
-              key={i}
-              className="absolute rounded-full bg-white/80"
-              style={{
-                left: `${s.x}%`,
-                top: `${s.y}%`,
-                width: s.size,
-                height: s.size,
-                animation: `twinkle ${s.dur}s ease-in-out ${s.delay}s infinite`,
-              }}
-            />
-          ))}
-        </div>
+  if (!gameState) return null
 
-        {/* Floating amber particles */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          {PARTICLES.map((p, i) => (
-            <div
-              key={i}
-              className="absolute rounded-full"
-              style={{
-                left: `${p.x}%`,
-                bottom: -10,
-                width: 3,
-                height: 3,
-                background: `rgba(212, 165, 116, ${p.opacity})`,
-                animation: `drift-up ${p.dur}s linear ${p.delay}s infinite`,
-              }}
-            />
-          ))}
-        </div>
+  const handleReturnLobby = async () => {
+    setReturningLobby(true)
+    try {
+      if (currentRoomId) {
+        await roomApi.leave(currentRoomId)
+      }
+    } catch (err) {
+      console.error('[GameBoard] leave failed:', err)
+    } finally {
+      setGameState(null)
+      setCurrentRoomId(null)
+      setReturningLobby(false)
+    }
+  }
 
-        {/* Title */}
-        <div className="relative z-10 mb-5 text-center">
-          <h1 className="font-display animate-title-glow bg-gradient-to-b from-amber-200 via-yellow-100 to-amber-300 bg-clip-text text-5xl font-bold tracking-[0.15em] text-transparent sm:text-6xl">
-            狼人杀
-          </h1>
-          <p className="font-display mt-2 text-sm tracking-[0.3em] text-amber-300/45">
-            月圆之夜 · 提瓦特的秘密
-          </p>
-        </div>
-
-        {/* Ornamental divider */}
-        <div className="relative z-10 mb-5 flex items-center justify-center gap-2.5">
-          <div className="h-px w-16 bg-gradient-to-r from-transparent to-amber-500/50" />
-          <div className="animate-pulse-glow size-1.5 rotate-45 bg-amber-400/60" />
-          <div className="size-2.5 rotate-45 border border-amber-400/50" />
-          <div className="animate-pulse-glow size-1.5 rotate-45 bg-amber-400/60" />
-          <div className="h-px w-16 bg-gradient-to-l from-transparent to-amber-500/50" />
-        </div>
-
-        {/* Scrolling character carousel */}
-        <div className="relative z-10 mb-7 w-full max-w-md">
-          <AvatarCarousel avatars={carouselAvatars} />
-        </div>
-
-        <CreateGameForm />
-
-        {/* Footer credit */}
-        <p className="font-display relative z-10 mt-8 text-xs tracking-widest text-amber-200/20">
-          AI 驱动的社交推理游戏
-        </p>
-      </div>
-    )
+  // "返回房间" is a passive drop-back into RoomView for everyone (host
+  // and guest alike). The room stays in FINISHED until whoever is the
+  // current host clicks 再来一局 from RoomView. If the original host left
+  // via 返回大厅, the next-earliest member is auto-promoted to host by
+  // the backend's leave_room logic — so a guest returning later can
+  // correctly see the host controls and restart the room themselves.
+  const handleReturnRoom = () => {
+    setGameState(null)
   }
 
   return (
@@ -258,10 +117,11 @@ export function GameBoard() {
           <div className="flex items-center gap-3">
             <Moon className="text-accent size-7" />
             <h1 className="font-display bg-gradient-to-r from-red-500 to-purple-400 bg-clip-text text-3xl font-bold tracking-wide text-transparent">
-              狼人杀
+              月圆之夜
             </h1>
           </div>
           <div className="flex items-center gap-3">
+            {/* Winner-only controls — HIDDEN entirely pre-winner (per spec) */}
             {gameState.winner && (
               <>
                 <Button
@@ -273,13 +133,24 @@ export function GameBoard() {
                   <Trophy className="size-3.5" />
                   查看结算
                 </Button>
+                {/* 返回房间 — amber/primary style. For host, this also
+                    restarts the room; for guest it's a passive return. */}
                 <Button
-                  onClick={() => useGameStore.getState().reset()}
+                  onClick={handleReturnRoom}
                   size="sm"
-                  className="bg-accent/20 hover:bg-accent/30 text-accent border-accent/30 gap-1.5 border"
+                  className="gap-1.5 border border-amber-500/40 bg-amber-500/15 text-amber-100 hover:bg-amber-500/25"
                 >
                   <RefreshCw className="size-3.5" />
-                  再来一局
+                  返回房间
+                </Button>
+                <Button
+                  onClick={handleReturnLobby}
+                  disabled={returningLobby}
+                  size="sm"
+                  className="gap-1.5 border border-slate-500/30 bg-slate-500/10 text-slate-300 hover:bg-slate-500/20"
+                >
+                  <ArrowLeft className="size-3.5" />
+                  返回大厅
                 </Button>
               </>
             )}
@@ -363,7 +234,7 @@ export function GameBoard() {
                     >
                       <span>{ROLE_EMOJI[p.role] || '❓'}</span>
                       <span className={cn('font-medium', p.is_human && 'text-amber-300')}>
-                        {p.name}
+                        {p.display_name || p.name}
                       </span>
                       <span className="ml-auto text-xs text-white/50">
                         {ROLE_LABEL[p.role] || p.role}

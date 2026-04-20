@@ -31,6 +31,8 @@ from backend.game import GameEngine
 from backend.game.victory import check_victory, get_victory_message
 from backend.models import GameEvent, GamePhase, GameState, RoundSnapshot, Player
 from backend.prefetch import PrefetchManager
+from backend.room import get_room_manager
+from backend.room.router import build_router as build_rooms_router
 
 # Load environment variables
 load_dotenv(Path(__file__).parent.parent / ".env.local")
@@ -50,38 +52,60 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-import json as _json
-
-_raw_keys = os.getenv("PLAYER_KEYS", "{}")
-try:
-    _PLAYER_KEYS: dict[str, str] = _json.loads(_raw_keys)  # {name: key}
-    _KEY_TO_PLAYER: dict[str, str] = {v: k for k, v in _PLAYER_KEYS.items()}  # {key: name}
-except Exception:
-    _PLAYER_KEYS = {}
-    _KEY_TO_PLAYER = {}
-
-
 @app.middleware("http")
-async def verify_access_key(request: Request, call_next):
-    # Skip auth for health check, characters listing, static files, and OPTIONS
-    if request.url.path in ("/api/health", "/api/characters") or request.method == "OPTIONS":
+async def resolve_identity(request: Request, call_next):
+    """Resolve the caller's identity from the `Authorization: Bearer <uuid>`
+    header. The backend trusts whatever identity the client claims — this is
+    anonymous multi-player; identities are client-generated UUIDs persisted
+    in the browser's localStorage.
+
+    When no header is present we fall back to the sentinel "local" so that
+    single-player dev (no room, no nickname) keeps working. That fallback is
+    logged at DEBUG only because the single-player case is a supported mode,
+    not a silent failure.
+    """
+    if not request.url.path.startswith("/api/") or request.method == "OPTIONS":
         return await call_next(request)
-    # Skip auth for static files (frontend assets)
-    if not request.url.path.startswith("/api/"):
-        return await call_next(request)
-    # Skip auth if no keys configured (local dev)
-    if not _PLAYER_KEYS:
-        request.state.player_name = "local"
+    if request.url.path in ("/api/health", "/api/characters"):
         return await call_next(request)
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return JSONResponse(status_code=401, content={"detail": "Missing access key"})
-    key = auth[7:]
-    player_name = _KEY_TO_PLAYER.get(key)
-    if not player_name:
-        return JSONResponse(status_code=401, content={"detail": "Invalid access key"})
-    request.state.player_name = player_name
+    if auth.startswith("Bearer "):
+        request.state.identity = auth[7:].strip() or "local"
+    else:
+        request.state.identity = "local"
+    # Back-compat alias: a few legacy endpoints still reference `player_name`
+    # as the identity. Keep the alias so nothing silently breaks.
+    request.state.player_name = request.state.identity
     return await call_next(request)
+
+
+def get_caller_identity(request: Request) -> str:
+    """Return `request.state.identity` or 401 if middleware didn't populate it."""
+    identity = getattr(request.state, "identity", None)
+    if not identity:
+        # Shouldn't normally happen — middleware runs on all /api/ routes.
+        log.warning("[get_caller_identity] request.state.identity missing for %s", request.url.path)
+        raise HTTPException(status_code=401, detail="Missing identity")
+    return identity
+
+
+def get_caller_player(game: GameState, request: Request) -> Player:
+    """Return the Player whose identity matches the caller, or 403.
+
+    This is the actor-dispatch glue: any endpoint that performs a player
+    action must resolve the caller to a specific player slot. AI slots don't
+    have identities, so this only ever returns human slots.
+    """
+    identity = get_caller_identity(request)
+    # "local" is the sentinel single-player identity. If the game was created
+    # via legacy start_game (no room), its sole human carries identity="local".
+    for p in game.players:
+        if p.is_human and p.identity == identity:
+            return p
+    raise HTTPException(
+        status_code=403,
+        detail={"code": "NOT_A_PARTICIPANT", "identity": identity},
+    )
 
 
 # Global game state storage (in-memory for MVP)
@@ -106,6 +130,49 @@ prefetch = PrefetchManager()
 # wait until after the hunter shoots so that event_index and day_record include
 # the hunter_shot event.  Keyed by game_id.
 _pending_end_round: dict[str, tuple[int, RoundSnapshot]] = {}
+
+
+# === Room system wiring ===
+
+_room_manager = get_room_manager()
+
+
+def _room_game_factory(mode: str, human_slots: list[dict]) -> str:
+    """Closure passed to RoomManager.start_game.
+
+    Creates a GameState via game_engine and stores it in the `games` dict.
+    Returns the new game_id.
+    """
+    game = game_engine.create_game(mode=mode, human_slots=human_slots)
+    games[game.game_id] = game
+    log.info(
+        "[rooms] created game %s for %d humans (mode=%s)",
+        game.game_id[:8],
+        len(human_slots),
+        mode,
+    )
+    return game.game_id
+
+
+app.include_router(build_rooms_router(_room_manager, _room_game_factory))
+
+
+async def _maybe_finish_room(game: GameState) -> None:
+    """Mark the owning room as FINISHED when a game has a winner.
+
+    Safe to call redundantly — mark_game_finished is idempotent. Called
+    from game_state_response (on every poll) so the room transition is
+    eventually-consistent without threading a hook through every endpoint
+    that might set `game.winner`.
+    """
+    if not game.winner:
+        return
+    room_id = _room_manager.room_id_for_game(game.game_id)
+    if room_id:
+        try:
+            await _room_manager.mark_game_finished(room_id)
+        except Exception as e:
+            log.warning("[_maybe_finish_room] mark_game_finished(%s) failed: %s", room_id, e)
 
 
 # === Request/Response Models ===
@@ -163,6 +230,11 @@ class PlayerResponse(BaseModel):
     is_human: bool
     avatar_url: str | None = None
     seer_result: str | None = None  # "WEREWOLF" or "GOOD" if checked by seer
+    # Identity + display_name are only set for human players so the frontend
+    # can match its stored identity to a specific player slot. Never populated
+    # for AI players.
+    identity: str | None = None
+    display_name: str | None = None
 
 
 class GameStateResponse(BaseModel):
@@ -177,6 +249,28 @@ class GameStateResponse(BaseModel):
     events: list[dict]
     winner: Optional[str]
     ai_speaking: bool = False
+    # Multi-human coordination fields. Single-player values: acks_needed=1,
+    # current_speaker_id may point at the lone human slot.
+    morning_acks: int = 0
+    morning_acks_needed: int = 0
+    night_acks: int = 0
+    night_acks_needed: int = 0
+    # Per-caller ack flags: True iff the viewer's own identity has ack'd
+    # this round's transition. Drives whether the UI renders the
+    # "进入白天" / "进入夜晚" button (not acked) or the waiting state
+    # (acked but quorum not met).
+    caller_morning_acked: bool = False
+    caller_night_acked: bool = False
+    current_speaker_id: str | None = None
+    # Blind vote progress: never expose individual votes here; UI only shows
+    # `已投票 N/M` until DAY_VOTE ends and `vote_result` event lands.
+    vote_submitted: int = 0
+    vote_total: int = 0
+    # Wolf-kill barrier progress — only meaningful when the viewer is a
+    # werewolf. Lets the UI render "已锁定目标，等待其他狼人 (1/2)".
+    wolf_kill_submitted: int = 0
+    wolf_kill_total: int = 0
+    caller_wolf_kill_submitted: bool = False
 
 
 # === Utility Functions ===
@@ -271,6 +365,8 @@ def player_response(
         is_human=player.is_human,
         avatar_url=player.avatar_url,
         seer_result=seer_result,
+        identity=player.identity if player.is_human else None,
+        display_name=player.display_name if player.is_human else None,
     )
 
 
@@ -342,6 +438,20 @@ def game_state_response(game: GameState, requesting_player_id: str = "player_0")
             if hid:
                 revealed_ids.add(hid)
 
+    quorum_humans = game.ack_quorum_identities
+    alive_human_total = len(quorum_humans)
+    vote_submitted, vote_total = game_engine.vote_progress(game)
+    caller_identity = requesting_player.identity if requesting_player else None
+    alive_human_wolves = [
+        w for w in game.alive_werewolves if w.is_human and w.identity
+    ]
+    wolf_kill_submitted = sum(
+        1 for w in alive_human_wolves if w.identity in game.wolf_kill_intents
+    )
+    wolf_kill_total = len(alive_human_wolves)
+    caller_wolf_kill_submitted = bool(
+        caller_identity and caller_identity in game.wolf_kill_intents
+    )
     return GameStateResponse(
         game_id=game.game_id,
         mode=game.mode,
@@ -351,12 +461,26 @@ def game_state_response(game: GameState, requesting_player_id: str = "player_0")
         players=[
             # Reveal all roles when game is over
             PlayerResponse(
-                id=p.id, name=p.name, role=p.role, alive=p.alive, is_human=p.is_human, avatar_url=p.avatar_url
+                id=p.id,
+                name=p.name,
+                role=p.role,
+                alive=p.alive,
+                is_human=p.is_human,
+                avatar_url=p.avatar_url,
+                identity=p.identity if p.is_human else None,
+                display_name=p.display_name if p.is_human else None,
             )
             if game_over
             # Publicly revealed identity (hunter who shot)
             else PlayerResponse(
-                id=p.id, name=p.name, role=p.role, alive=p.alive, is_human=p.is_human, avatar_url=p.avatar_url
+                id=p.id,
+                name=p.name,
+                role=p.role,
+                alive=p.alive,
+                is_human=p.is_human,
+                avatar_url=p.avatar_url,
+                identity=p.identity if p.is_human else None,
+                display_name=p.display_name if p.is_human else None,
             )
             if p.id in revealed_ids
             else player_response(
@@ -370,6 +494,18 @@ def game_state_response(game: GameState, requesting_player_id: str = "player_0")
         events=filter_events_for_player(game.events, requesting_player) if requesting_player else [],
         winner=game.winner,
         ai_speaking=game.ai_speaking,
+        morning_acks=len(game.morning_acks & quorum_humans),
+        morning_acks_needed=alive_human_total,
+        night_acks=len(game.night_acks & quorum_humans),
+        night_acks_needed=alive_human_total,
+        caller_morning_acked=bool(caller_identity and caller_identity in game.morning_acks),
+        caller_night_acked=bool(caller_identity and caller_identity in game.night_acks),
+        current_speaker_id=game.current_speaker_id,
+        vote_submitted=vote_submitted,
+        vote_total=vote_total,
+        wolf_kill_submitted=wolf_kill_submitted,
+        wolf_kill_total=wolf_kill_total,
+        caller_wolf_kill_submitted=caller_wolf_kill_submitted,
     )
 
 
@@ -390,41 +526,56 @@ async def list_characters():
 
 @app.post("/api/verify-key")
 async def verify_key(request: Request):
-    return {"status": "ok", "player_name": request.state.player_name}
+    """Return the caller's resolved identity (anonymous Bearer)."""
+    return {"status": "ok", "identity": request.state.identity}
 
 
 @app.post("/api/game/start", response_model=GameStateResponse)
 async def start_game(config: GameConfig, request: Request):
-    """Start a new game.
+    """Start a new single-player game.
+
+    Multi-human games start through the room flow (see backend/room/router.py).
+    This endpoint keeps the single-player path working without a room.
 
     Args:
-        config: Game configuration
+        config: Game configuration.
 
     Returns:
-        Initial game state
+        Initial game state.
     """
     try:
         # Invalidate any prefetch from previous game
         for gid in list(games.keys()):
             prefetch.invalidate(gid)
 
-        # Create new game (player-scoped memory isolation)
+        identity = get_caller_identity(request)
+        # Single-human slot using the caller's identity — makes the anonymous
+        # identity flow through to barrier acks + profiler scoping.
         game = game_engine.create_game(
             mode=config.mode,
-            preferred_role=config.preferred_role,
-            human_identity=request.state.player_name,
+            human_slots=[
+                {
+                    "identity": identity,
+                    "display_name": None,
+                    "preferred_role": config.preferred_role,
+                }
+            ],
         )
 
-        # Store in memory
         games[game.game_id] = game
 
-        human = game.get_player_by_id("player_0")
+        human = next((p for p in game.players if p.is_human), None)
         roles_summary = ", ".join(f"{p.name}={p.role}" for p in game.players)
-        log.info(f"=== NEW GAME === mode={config.mode} preferred_role={config.preferred_role}")
-        log.info(f"  Human role: {human.role if human else '?'}")
+        log.info(
+            "=== NEW GAME === mode=%s identity=%s preferred_role=%s",
+            config.mode,
+            identity,
+            config.preferred_role,
+        )
+        log.info(f"  Human slot: {human.id if human else '?'} role={human.role if human else '?'}")
         log.info(f"  All roles: {roles_summary}")
 
-        return game_state_response(game)
+        return game_state_response(game, requesting_player_id=human.id if human else "player_0")
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -444,6 +595,10 @@ async def get_game_state(game_id: str, player_id: str = "player_0"):
         Current game state
     """
     game = get_game(game_id)
+    # Flip the owning room to FINISHED once the game has a winner, so that
+    # RoomView can tell the difference between "still playing" and "play
+    # again" without inspecting GameState itself.
+    await _maybe_finish_room(game)
     return game_state_response(game, requesting_player_id=player_id)
 
 
@@ -463,58 +618,132 @@ async def night_action(req: NightActionRequest):
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
 
+    # Night-barrier gate: a human-initiated action before all humans have
+    # ack'd "进入夜晚" must be refused. AI-initiated calls (internal
+    # prefetch, auto-advance) bypass this because they're server-side.
+    if player.is_human:
+        quorum = game.ack_quorum_identities
+        missing = quorum - game.night_acks
+        if missing:
+            log.info(
+                "[night_action] blocking human action=%s until night-ack quorum (missing=%s)",
+                req.action_type,
+                missing,
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "WAITING_NIGHT_ACK",
+                    "missing": list(missing),
+                    "night_acks": len(game.night_acks),
+                    "night_acks_needed": len(quorum),
+                },
+            )
+
     log.info(f"[Night] action={req.action_type} player={player.name}({player.role}) target={req.target_id}")
 
     try:
         if req.action_type == "werewolf_kill":
-            # Werewolf kill - use human's target if provided, otherwise AI
-            if player.is_human and req.target_id:
-                # Human werewolf: resolve target by majority vote with AI partner
-                human_target = game.get_player_by_id(req.target_id)
-                ai_suggestion_name = game.wolf_ai_suggestion
-                if ai_suggestion_name and human_target:
-                    ai_target = game.get_player_by_name(ai_suggestion_name)
-                    if ai_target and ai_target.id != human_target.id:
-                        # Disagreement: random choice, but show both picks
-                        target = random.choice([human_target, ai_target])
-                        # Find AI wolf name
-                        ai_wolf = next((w for w in game.alive_werewolves if not w.is_human), None)
-                        ai_name = ai_wolf.name if ai_wolf else "队友"
-                        game.events.append(
-                            GameEvent(
-                                type="werewolf_chat",
-                                round=game.round_number,
-                                phase="NIGHT_WEREWOLF",
-                                message=(
-                                    f"🐺 你选择了{human_target.name}，"
-                                    f"{ai_name}选择了{ai_target.name}，"
-                                    f"最终随机决定击杀{target.name}"
-                                ),
-                            )
+            # N-human kill barrier: collect each alive human wolf's intent;
+            # commit only when every alive human wolf has submitted. When
+            # human wolves disagree, resolve randomly. AI wolves contribute
+            # via the collab suggestion in game.wolf_ai_suggestion or the
+            # fresh collab result computed below.
+            human_wolves = [w for w in game.alive_werewolves if w.is_human]
+            ai_wolves = [w for w in game.alive_werewolves if not w.is_human]
+
+            if player.is_human:
+                if not req.target_id:
+                    raise HTTPException(status_code=400, detail="target_id required for human wolf")
+                if player.role != "werewolf":
+                    raise HTTPException(status_code=403, detail={"code": "NOT_A_WOLF"})
+                if not player.identity:
+                    raise HTTPException(status_code=400, detail={"code": "MISSING_IDENTITY"})
+                # Record this wolf's intent (idempotent: re-submitting updates).
+                game.wolf_kill_intents[player.identity] = req.target_id
+                log.info(
+                    "[werewolf_kill] wolf %s (%s) intends to kill %s (%d/%d submitted)",
+                    player.name,
+                    player.identity[:8] if player.identity else "?",
+                    req.target_id,
+                    len(game.wolf_kill_intents),
+                    len(human_wolves),
+                )
+
+                # Barrier: wait until every alive human wolf has submitted.
+                missing = [w for w in human_wolves if w.identity not in game.wolf_kill_intents]
+                if missing:
+                    return ActionResult(
+                        success=True,
+                        message="已锁定目标，等待其他狼人确认",
+                        data={
+                            "waiting": True,
+                            "submitted": len(game.wolf_kill_intents),
+                            "total": len(human_wolves),
+                        },
+                    )
+
+                # All human wolves submitted — assemble the candidate pool.
+                # Each human wolf's pick counts once; AI wolves contribute
+                # via game.wolf_ai_suggestion (set by /wolf-discuss) or a
+                # fresh collab if that's missing.
+                candidate_ids: list[str] = list(game.wolf_kill_intents.values())
+                if ai_wolves:
+                    ai_sugg_name = game.wolf_ai_suggestion
+                    ai_target = (
+                        game.get_player_by_name(ai_sugg_name) if ai_sugg_name else None
+                    )
+                    if not ai_target:
+                        # Fresh AI collab as non-silent fallback.
+                        log.warning(
+                            "[werewolf_kill] no cached wolf_ai_suggestion; running fresh collab"
                         )
-                    else:
-                        # Agreement
-                        target = human_target
-                        game.events.append(
-                            GameEvent(
-                                type="werewolf_chat",
-                                round=game.round_number,
-                                phase="NIGHT_WEREWOLF",
-                                message=f"🐺 意见一致，击杀{target.name}",
-                            )
+                        collab = ai_agent.werewolf_collaborate(game)
+                        _add_wolf_collab_events(game, collab)
+                        game.wolf_collab_result = collab
+                        ai_target = game.get_player_by_name(collab.get("target"))
+                    if ai_target:
+                        candidate_ids.append(ai_target.id)
+
+                # Unique candidates preserving order; random choice across them.
+                unique_candidates = list(dict.fromkeys(candidate_ids))
+                target_id = random.choice(unique_candidates)
+                target = game.get_player_by_id(target_id)
+                if not target:
+                    raise HTTPException(status_code=400, detail="No valid target")
+
+                if len(unique_candidates) > 1:
+                    picks_desc = ", ".join(
+                        f"{game.get_player_by_id(cid).name if game.get_player_by_id(cid) else cid}"
+                        for cid in unique_candidates
+                    )
+                    game.events.append(
+                        GameEvent(
+                            type="werewolf_chat",
+                            round=game.round_number,
+                            phase="NIGHT_WEREWOLF",
+                            message=f"🐺 候选目标: {picks_desc}，随机决定击杀 {target.name}",
                         )
+                    )
                 else:
-                    # Solo wolf or no AI suggestion
-                    target = human_target
+                    game.events.append(
+                        GameEvent(
+                            type="werewolf_chat",
+                            round=game.round_number,
+                            phase="NIGHT_WEREWOLF",
+                            message=f"🐺 意见一致，击杀{target.name}",
+                        )
+                    )
+
             else:
+                # AI-initiated kill (no humans are wolves in this game).
                 collab = ai_agent.werewolf_collaborate(game)
                 target_name = collab.get("target")
                 target = game.get_player_by_name(target_name) if target_name else None
                 _add_wolf_collab_events(game, collab)
                 game.wolf_collab_result = collab
-
-            if not target:
-                raise HTTPException(status_code=400, detail="No valid target")
+                if not target:
+                    raise HTTPException(status_code=400, detail="No valid target")
 
             log.info(f"  Werewolf kills: {target.name}")
             result = game_engine.process_night_werewolf(game, target.id)
@@ -956,16 +1185,75 @@ class HumanSpeechRequest(BaseModel):
 
 
 @app.post("/api/game/human-speak", response_model=ActionResult)
-async def human_speak(req: HumanSpeechRequest):
-    """Submit human player's speech during discussion."""
+async def human_speak(req: HumanSpeechRequest, request: Request):
+    """Submit the caller's discussion speech.
+
+    Enforces sequential turn-taking: only the player whose id equals
+    `game.current_speaker_id` can submit, and that player must belong to
+    the caller's identity. Wrong speaker → 409 NOT_YOUR_TURN. Dead speaker
+    → 403. Endpoint is safe to retry on NOT_YOUR_TURN because no state
+    mutation happens before the gate.
+    """
     game = get_game(req.game_id)
-    player = game.get_player_by_id(req.player_id)
+    caller = get_caller_player(game, request)
 
-    if not player:
-        raise HTTPException(status_code=404, detail="Player not found")
+    # Auth gate: submitted player_id must actually belong to the caller.
+    if caller.id != req.player_id:
+        log.warning(
+            "[human_speak] identity=%s tried to speak as player_id=%s (theirs is %s)",
+            caller.identity,
+            req.player_id,
+            caller.id,
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "NOT_YOUR_SLOT", "your_player_id": caller.id},
+        )
 
-    game_engine.add_speech(game, req.player_id, req.content)
-    return ActionResult(success=True, message="发言已记录", data={})
+    if not caller.alive:
+        raise HTTPException(status_code=403, detail={"code": "DEAD_CANT_SPEAK"})
+
+    # Turn gate.
+    if game.phase != GamePhase.DAY_DISCUSSION:
+        raise HTTPException(status_code=400, detail={"code": "NOT_DISCUSSION_PHASE"})
+
+    _ensure_speech_order(game)
+    if game.current_speaker_id != caller.id:
+        log.warning(
+            "[human_speak] NOT_YOUR_TURN: caller=%s current_speaker=%s",
+            caller.id,
+            game.current_speaker_id,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "NOT_YOUR_TURN",
+                "current_speaker_id": game.current_speaker_id,
+                "your_player_id": caller.id,
+            },
+        )
+
+    game_engine.add_speech(game, caller.id, req.content)
+    # Without appending a `speech` event here, the human speech lives only
+    # in game.speeches (internal list) and never shows up in the game log
+    # UI (which reads game.events). The old /finish-discussion used to do
+    # this append; /advance-discussion skips humans, so it must live here.
+    game.events.append(
+        GameEvent(
+            type="speech",
+            round=game.round_number,
+            phase="DAY_DISCUSSION",
+            message=f"【{caller.name}】: {req.content}",
+        )
+    )
+    # Consume the turn token; `/advance-discussion` will move to next speaker
+    # (AI run batch or next human barrier).
+    advance_speaker(game)
+    return ActionResult(
+        success=True,
+        message="发言已记录",
+        data={"next_speaker_id": game.current_speaker_id},
+    )
 
 
 def _build_sticker_data(player: Player, stickers: list[str]) -> dict:
@@ -983,14 +1271,62 @@ def _build_sticker_data(player: Player, stickers: list[str]) -> dict:
 
 
 def _ensure_speech_order(game: GameState) -> None:
-    """Determine random speaking order if not already set."""
+    """Determine random speaking order if not already set.
+
+    Uses a uniform shuffle (NOT rotate) so that multiple humans get scattered
+    among AI slots in expectation. A rotate leaves adjacent human slots
+    adjacent, which caused "AI dumps all speeches before first human" bugs.
+    """
     if not game.speech_order:
         alive = game.alive_players
         if alive:
             ids = [p.id for p in alive]
-            start = random.randint(0, len(ids) - 1)
-            game.speech_order = ids[start:] + ids[:start]
-        log.info(f"[SpeechOrder] order={[game.get_player_by_id(pid).name for pid in game.speech_order]}")
+            random.shuffle(ids)
+            game.speech_order = ids
+        # Initialize the turn token to the first speaker.
+        game.current_speaker_id = game.speech_order[0] if game.speech_order else None
+        log.info(
+            "[SpeechOrder] order=%s (humans=%s)",
+            [game.get_player_by_id(pid).name for pid in game.speech_order],
+            [
+                game.get_player_by_id(pid).name
+                for pid in game.speech_order
+                if game.get_player_by_id(pid) and game.get_player_by_id(pid).is_human
+            ],
+        )
+
+
+def advance_speaker(game: GameState) -> str | None:
+    """Move `current_speaker_id` to the next entry in `speech_order`.
+
+    Returns the new speaker id, or None when the order is exhausted.
+    Intentionally tolerates being called when current_speaker is None —
+    in that case we snap to the first entry so `/advance-discussion` is
+    idempotent before any speech has happened.
+    """
+    order = game.speech_order
+    if not order:
+        game.current_speaker_id = None
+        return None
+    if game.current_speaker_id is None:
+        game.current_speaker_id = order[0]
+        return game.current_speaker_id
+    try:
+        idx = order.index(game.current_speaker_id)
+    except ValueError:
+        # Current speaker not in order — shouldn't happen, but log loud.
+        log.warning(
+            "[advance_speaker] current_speaker_id=%s not in speech_order=%s; resetting to first",
+            game.current_speaker_id,
+            order,
+        )
+        game.current_speaker_id = order[0]
+        return game.current_speaker_id
+    if idx + 1 >= len(order):
+        game.current_speaker_id = None
+        return None
+    game.current_speaker_id = order[idx + 1]
+    return game.current_speaker_id
 
 
 def _get_pre_human_ids(game: GameState) -> list[str]:
@@ -1200,7 +1536,16 @@ async def _prefetch_night_actions(game: GameState, human: Player):
         if phase not in phase_role_map:
             break
         acting_role = phase_role_map[phase]
-        if human.role == acting_role and human.alive:
+        # Yield whenever ANY living human holds this role — not just the
+        # caller. Previously we only checked `human.role == acting_role`,
+        # so if Alice(caller) was a seer and Bob was a wolf, the prefetch
+        # would silently run the AI wolf's collab on Bob's behalf and
+        # commit the kill. With multi-human, a single caller no longer
+        # represents every human slot.
+        role_has_living_human = any(
+            p for p in game.alive_players if p.role == acting_role and p.is_human
+        )
+        if role_has_living_human:
             # Gap 4: chain wolf discuss prefetch for human werewolf
             if acting_role == "werewolf":
                 await prefetch.launch(
@@ -1449,6 +1794,186 @@ async def _generate_speeches_background(
         game.ai_speaking = False
 
 
+@app.post("/api/game/enter-day", response_model=GameStateResponse)
+async def enter_day(req: SpeechRequest, request: Request):
+    """Record this human's explicit "进入白天" acknowledgement.
+
+    Separate from /advance-night so that the night-driver loop doesn't
+    double-record acks on behalf of humans who haven't clicked the button
+    yet — a bug observed in the first multi-human play session where both
+    humans' acks were filled automatically by the auto-advance useEffect.
+
+    Idempotent: re-calling after quorum is harmless.
+    """
+    game = get_game(req.game_id)
+    caller = get_caller_player(game, request)
+    if caller.id != req.player_id:
+        raise HTTPException(
+            status_code=403, detail={"code": "NOT_YOUR_SLOT", "your_player_id": caller.id}
+        )
+    if caller.identity in game.human_identities:
+        try:
+            quorum, acked, total = game_engine.record_ack(game, caller.identity, "morning")
+            log.info(
+                "[enter_day] morning ack from %s (%s): %d/%d quorum=%s",
+                caller.identity,
+                caller.id,
+                acked,
+                total,
+                quorum,
+            )
+        except ValueError:
+            log.warning("[enter_day] record_ack rejected identity=%s", caller.identity)
+    return game_state_response(game, requesting_player_id=caller.id)
+
+
+@app.post("/api/game/enter-night", response_model=GameStateResponse)
+async def enter_night(req: SpeechRequest, request: Request):
+    """Record this human's explicit "进入夜晚" acknowledgement.
+
+    Gates /advance-night (AI night driver) and all night-action endpoints
+    (/night-action, /wolf-*). Until every alive human has ack'd, night
+    actions return the current state unchanged and the frontend renders
+    a "等待 X 进入夜晚" waiting state.
+    """
+    game = get_game(req.game_id)
+    caller = get_caller_player(game, request)
+    if caller.id != req.player_id:
+        raise HTTPException(
+            status_code=403, detail={"code": "NOT_YOUR_SLOT", "your_player_id": caller.id}
+        )
+    if caller.identity in game.human_identities:
+        try:
+            quorum, acked, total = game_engine.record_ack(game, caller.identity, "night")
+            log.info(
+                "[enter_night] night ack from %s (%s): %d/%d quorum=%s",
+                caller.identity,
+                caller.id,
+                acked,
+                total,
+                quorum,
+            )
+        except ValueError:
+            log.warning("[enter_night] record_ack rejected identity=%s", caller.identity)
+    return game_state_response(game, requesting_player_id=caller.id)
+
+
+@app.post("/api/game/advance-discussion", response_model=GameStateResponse)
+async def advance_discussion(req: SpeechRequest, request: Request):
+    """Unified discussion advancer.
+
+    Replaces `/pre-discussion` + `/finish-discussion`. Runs AI speeches from
+    the current speaker onward until either (a) the next speaker is a living
+    human (→ stop, frontend shows that human the speak affordance), or
+    (b) the order is exhausted (→ transition to DAY_VOTE).
+
+    The morning-ack quorum gate lives here: if not all alive humans have
+    called `/advance-night` this round, the endpoint returns the current
+    state without advancing and the frontend renders "等待 X 进入白天".
+    Idempotent to retry.
+    """
+    game = get_game(req.game_id)
+    caller = get_caller_player(game, request)
+    if caller.id != req.player_id:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "NOT_YOUR_SLOT", "your_player_id": caller.id},
+        )
+
+    if game.phase != GamePhase.DAY_DISCUSSION:
+        raise HTTPException(status_code=400, detail={"code": "NOT_DISCUSSION_PHASE"})
+
+    # Morning quorum gate.
+    alive_quorum = game.ack_quorum_identities
+    missing = alive_quorum - game.morning_acks
+    if missing:
+        log.info(
+            "[advance_discussion] waiting on morning acks: missing=%s acks=%s",
+            missing,
+            game.morning_acks,
+        )
+        return game_state_response(game, requesting_player_id=caller.id)
+
+    _ensure_speech_order(game)
+
+    # Safety cap to avoid runaway loops if something goes wrong.
+    max_iterations = len(game.speech_order) + 1
+    for _ in range(max_iterations):
+        speaker_id = game.current_speaker_id
+        if speaker_id is None:
+            # Order exhausted — transition to voting.
+            game.phase = GamePhase.DAY_VOTE
+            # Pre-compute AI votes while humans think about theirs.
+            try:
+                await prefetch.launch(
+                    game.game_id,
+                    "ai_votes",
+                    game.round_number,
+                    _prefetch_votes(game),
+                )
+            except Exception as e:
+                log.warning("[advance_discussion] ai_votes prefetch launch failed: %s", e)
+            break
+
+        speaker = game.get_player_by_id(speaker_id)
+        if not speaker:
+            log.warning(
+                "[advance_discussion] speaker_id=%s not found in players; advancing past it",
+                speaker_id,
+            )
+            advance_speaker(game)
+            continue
+        if not speaker.alive:
+            log.info(
+                "[advance_discussion] skipping dead speaker %s (%s)",
+                speaker.name,
+                speaker.id,
+            )
+            advance_speaker(game)
+            continue
+        if speaker.is_human:
+            log.info(
+                "[advance_discussion] yield to human speaker %s (%s)",
+                speaker.name,
+                speaker.id,
+            )
+            break
+
+        # AI speaker: generate synchronously so the response reflects latest.
+        try:
+            speech, stickers = ai_agent.generate_speech(speaker, game)
+            game_engine.add_speech(game, speaker.id, speech)
+            game.events.append(
+                GameEvent(
+                    type="speech",
+                    round=game.round_number,
+                    phase="DAY_DISCUSSION",
+                    message=f"【{speaker.name}】: {speech}",
+                    data=_build_sticker_data(speaker, stickers),
+                )
+            )
+        except Exception as e:
+            log.error(
+                "[advance_discussion] AI speech failed for %s: %s — appending placeholder",
+                speaker.name,
+                e,
+                exc_info=True,
+            )
+            # Non-silent fallback: record a placeholder so the order still moves.
+            game_engine.add_speech(game, speaker.id, "(沉默)")
+            game.events.append(
+                GameEvent(
+                    type="speech",
+                    round=game.round_number,
+                    phase="DAY_DISCUSSION",
+                    message=f"【{speaker.name}】: (沉默)",
+                )
+            )
+        advance_speaker(game)
+
+    return game_state_response(game, requesting_player_id=caller.id)
+
+
 @app.post("/api/game/pre-discussion", response_model=GameStateResponse)
 async def pre_discussion(req: SpeechRequest):
     """Phase 1: Determine speaking order, launch background task for pre-human speeches.
@@ -1584,13 +2109,8 @@ async def run_discussion(req: SpeechRequest):
         raise HTTPException(status_code=400, detail="Not in discussion phase")
 
     try:
-        # Determine order if not set
-        if not game.speech_order:
-            alive = game.alive_players
-            if alive:
-                ids = [p.id for p in alive]
-                start = random.randint(0, len(ids) - 1)
-                game.speech_order = ids[start:] + ids[:start]
+        # Determine order if not set (shuffle to scatter humans).
+        _ensure_speech_order(game)
 
         for pid in game.speech_order:
             player = game.get_player_by_id(pid)
@@ -1628,26 +2148,64 @@ async def run_discussion(req: SpeechRequest):
 
 
 @app.post("/api/game/vote", response_model=ActionResult)
-async def vote(req: VoteRequest):
-    """Process vote.
+async def vote(req: VoteRequest, request: Request):
+    """Process a human vote under the multi-human blind-vote barrier.
 
-    Args:
-        req: Vote request
-
-    Returns:
-        Vote result
+    Each alive human submits once. Votes are only resolved (AI votes + tally
+    + phase transition) after ALL alive humans have voted. Response never
+    exposes individual votes — just the blind (submitted, total) counter
+    until resolution, when the public `vote_result` event lands in the event log.
     """
     game = get_game(req.game_id)
-    player = game.get_player_by_id(req.player_id)
+    caller = get_caller_player(game, request)
+    if caller.id != req.player_id:
+        raise HTTPException(
+            status_code=403, detail={"code": "NOT_YOUR_SLOT", "your_player_id": caller.id}
+        )
+    if not caller.alive:
+        raise HTTPException(status_code=403, detail={"code": "DEAD_CANT_VOTE"})
+    if game.phase != GamePhase.DAY_VOTE:
+        raise HTTPException(status_code=400, detail={"code": "NOT_VOTE_PHASE"})
+    if caller.id in game.votes:
+        # Idempotent-ish: return progress instead of 409 so retries (flaky
+        # network) don't show scary errors.
+        log.info(
+            "[vote] identity=%s player=%s already voted; returning progress",
+            caller.identity,
+            caller.id,
+        )
+        submitted, total = game_engine.vote_progress(game)
+        return ActionResult(
+            success=True,
+            message="Vote already recorded",
+            data={"submitted": submitted, "total": total, "waiting": True},
+        )
 
-    if not player:
-        raise HTTPException(status_code=404, detail="Player not found")
+    player = caller
 
     try:
-        # Add human vote (None target_id → "ABSTAIN")
+        # Record this human's vote (None target_id → "ABSTAIN").
         vote_target = req.target_id if req.target_id else "ABSTAIN"
-        game_engine.add_vote(game, req.player_id, vote_target)
+        game_engine.add_vote(game, caller.id, vote_target)
 
+        # Barrier: if any alive human hasn't voted yet, return blind progress.
+        alive_human_ids = {p.id for p in game.alive_players if p.is_human}
+        unvoted_humans = alive_human_ids - set(game.votes.keys())
+        if unvoted_humans:
+            submitted, total = game_engine.vote_progress(game)
+            log.info(
+                "[vote] %s voted; waiting on %d human(s): %s",
+                caller.id,
+                len(unvoted_humans),
+                unvoted_humans,
+            )
+            return ActionResult(
+                success=True,
+                message="Vote recorded; waiting for other humans",
+                data={"submitted": submitted, "total": total, "waiting": True},
+            )
+
+        # All alive humans have voted — proceed to AI votes + resolution.
         # Gap 3: Use prefetched AI votes if available
         cached_votes = await prefetch.get_or_wait(game.game_id, "ai_votes", game.round_number, timeout=15.0)
 
@@ -1747,15 +2305,59 @@ async def vote(req: VoteRequest):
 
 @app.post("/api/game/ai-vote", response_model=ActionResult)
 async def ai_vote(req: SpeechRequest):
-    """Generate AI player votes for all AI players.
+    """Generate AI player votes + resolve the round.
 
-    Args:
-        req: Contains game_id
-
-    Returns:
-        Voting result
+    Historically this endpoint was the dead player's "push the game forward"
+    button — it runs all AI votes, calls process_vote, and transitions to
+    night. In multi-human that caused the dead player's click to bypass the
+    blind-vote barrier and skip the living humans' vote. Now gated on the
+    same alive-human-vote quorum as /vote: if any alive human hasn't voted,
+    we return early without running AI votes or advancing phase.
     """
     game = get_game(req.game_id)
+
+    # Barrier: don't resolve vote until all alive humans have voted.
+    alive_human_ids = {p.id for p in game.alive_players if p.is_human}
+    unvoted_humans = alive_human_ids - set(game.votes.keys())
+    if unvoted_humans:
+        submitted, total = game_engine.vote_progress(game)
+        log.info(
+            "[ai_vote] blocked: %d alive human(s) haven't voted yet (%s)",
+            len(unvoted_humans),
+            unvoted_humans,
+        )
+        return ActionResult(
+            success=True,
+            message="Waiting for alive humans to vote",
+            data={"submitted": submitted, "total": total, "waiting": True},
+        )
+
+    # Spectator barrier: when ALL humans are dead, block until every dead
+    # human has called /ai-vote ("观看投票"). Each call records the caller's
+    # identity in a dedicated set; vote resolution runs only once everyone
+    # has watched. Prevents one spectator's click from racing the game to
+    # the next night before the other has read the vote result.
+    if not alive_human_ids and game.human_identities:
+        caller = game.get_player_by_id(req.player_id)
+        if caller and caller.is_human and caller.identity:
+            game.vote_watch_acks.add(caller.identity)
+        missing = game.human_identities - game.vote_watch_acks
+        if missing:
+            log.info(
+                "[ai_vote] blocked on spectator quorum: missing=%s",
+                missing,
+            )
+            submitted, total = game_engine.vote_progress(game)
+            return ActionResult(
+                success=True,
+                message="Waiting for spectators",
+                data={
+                    "submitted": submitted,
+                    "total": total,
+                    "waiting": True,
+                    "spectator_missing": len(missing),
+                },
+            )
 
     try:
         # Gap 3: Use prefetched AI votes if available
@@ -1850,20 +2452,36 @@ async def ai_vote(req: SpeechRequest):
 
 
 @app.post("/api/game/hunter-shoot", response_model=ActionResult)
-async def hunter_shoot(req: NightActionRequest):
+async def hunter_shoot(req: NightActionRequest, request: Request):
     """Process hunter shooting.
 
-    Args:
-        req: Contains game_id, hunter player_id, and optional target_id (for human hunter)
-
-    Returns:
-        Shoot result
+    Identity gate: when the hunter is human, only that human's identity
+    may trigger the shoot. In single-player this is usually a no-op (the
+    lone human is either the hunter — their own UI calls this — or a
+    non-hunter whose auto-shoot useEffect targets the AI hunter). In
+    multi-human it's load-bearing: otherwise a non-hunter client's
+    useEffect would silently resolve the human hunter's shot before
+    they got to pick a target.
     """
     game = get_game(req.game_id)
     hunter = game.get_player_by_id(req.player_id)
 
     if not hunter or hunter.role != "hunter":
         raise HTTPException(status_code=400, detail="Not a hunter")
+
+    if hunter.is_human:
+        caller_identity = get_caller_identity(request)
+        if caller_identity != hunter.identity:
+            log.warning(
+                "[hunter_shoot] caller=%s tried to shoot on behalf of human hunter %s (%s) — blocked",
+                caller_identity,
+                hunter.name,
+                hunter.identity,
+            )
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "NOT_THE_HUNTER", "hunter_identity": hunter.identity},
+            )
 
     try:
         # Hunter shooting changes alive status — invalidate all prefetches
@@ -1960,17 +2578,43 @@ async def hunter_shoot(req: NightActionRequest):
 
 
 @app.post("/api/game/advance-night", response_model=GameStateResponse)
-async def advance_night(req: SpeechRequest):
-    """Auto-process AI night phases until human's turn or morning.
+async def advance_night(req: SpeechRequest, request: Request):
+    """Auto-process AI night phases until this human's turn or morning.
 
-    This runs all night sub-phases where the human player doesn't act,
-    then stops when it reaches a phase requiring human input or morning.
+    Multi-human semantics: records the caller's morning ack so the frontend
+    can display "等待 X 进入白天". The heavy night-resolution work is
+    idempotent — the first call runs it, subsequent calls only append acks.
     """
     game = get_game(req.game_id)
-    human = game.get_player_by_id(req.player_id)
+    caller = get_caller_player(game, request)
+    if caller.id != req.player_id:
+        log.warning(
+            "[advance_night] identity=%s sent player_id=%s (theirs is %s)",
+            caller.identity,
+            req.player_id,
+            caller.id,
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "NOT_YOUR_SLOT", "your_player_id": caller.id},
+        )
+    human = caller
 
-    if not human:
-        raise HTTPException(status_code=404, detail="Player not found")
+    # Night-barrier gate: if any alive human hasn't ack'd "进入夜晚" yet,
+    # refuse to drive AI night actions. This prevents the pattern where the
+    # first client's auto-advance ran all of night before the second human
+    # even saw the "进入夜晚" button.
+    _alive_humans = game.ack_quorum_identities
+    _missing_night = _alive_humans - game.night_acks
+    # Only gate during actual NIGHT_* phases — in DAY_DISCUSSION (the morning
+    # reveal) we are no longer driving night and don't want to deadlock.
+    if _missing_night and game.phase.value.startswith("NIGHT_"):
+        log.info(
+            "[advance_night] night-ack barrier: missing=%s acks=%s; returning state",
+            _missing_night,
+            game.night_acks,
+        )
+        return game_state_response(game, requesting_player_id=caller.id)
 
     # Map phases to the role that acts in them
     phase_role_map = {
@@ -2002,7 +2646,14 @@ async def advance_night(req: SpeechRequest):
 
                 acting_role = phase_role_map[phase]
 
-                if human.role == acting_role and human.alive:
+                # Yield when ANY living human holds this role, not just the
+                # caller. Otherwise a non-wolf caller's /advance-night would
+                # silently run the AI wolf collab on the human wolf's
+                # behalf — the bug observed during the mixed-wolf session.
+                role_has_living_human = any(
+                    p for p in game.alive_players if p.role == acting_role and p.is_human
+                )
+                if role_has_living_human:
                     break
 
                 actor = next(
@@ -2207,25 +2858,56 @@ async def advance_night(req: SpeechRequest):
 
 
 @app.post("/api/game/end-round", response_model=ActionResult)
-async def end_round(req: SpeechRequest):
+async def end_round(req: SpeechRequest, request: Request):
     """End current round and create memory records.
 
-    Args:
-        req: Contains game_id
-
-    Returns:
-        Success message
+    Multi-human semantics: records the caller's night ack. The actual
+    end_round memory-write runs on the first caller only (idempotency
+    enforced by game_engine.end_round itself being safe to call once per
+    round — subsequent calls are suppressed here to avoid double writes).
     """
     game = get_game(req.game_id)
+    caller = get_caller_player(game, request)
+    if caller.id != req.player_id:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "NOT_YOUR_SLOT", "your_player_id": caller.id},
+        )
+
+    # Ack first so count is accurate even if end_round was already done.
+    acked = total = 0
+    quorum = False
+    if caller.identity in game.human_identities:
+        try:
+            quorum, acked, total = game_engine.record_ack(game, caller.identity, "night")
+            log.info(
+                "[end_round] night ack from %s (%s): %d/%d quorum=%s",
+                caller.identity,
+                caller.id,
+                acked,
+                total,
+                quorum,
+            )
+        except ValueError:
+            log.warning(
+                "[end_round] record_ack rejected identity=%s",
+                caller.identity,
+            )
 
     try:
-        # Create memory records
+        # First-caller wins the memory-write; the engine.end_round is
+        # effectively single-shot per round because round_number increments
+        # via next_phase, and morning resolution runs only once.
         game_engine.end_round(game)
 
         return ActionResult(
             success=True,
             message=f"Round {game.round_number} ended, memory records created",
-            data={},
+            data={
+                "night_acks": acked,
+                "night_acks_needed": total,
+                "quorum": quorum,
+            },
         )
 
     except Exception as e:

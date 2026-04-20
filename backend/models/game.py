@@ -66,7 +66,9 @@ class GameState(BaseModel):
     events: list[GameEvent] = Field(default_factory=list)
     memory_base: Path | None = Field(default=None, exclude=True)
     winner: str | None = None
-    human_identity: str = Field(default="local", exclude=True)
+    # Set of all human identities playing in this game. Used for per-identity
+    # barrier acks. Single-player case: a 1-element set.
+    human_identities: set[str] = Field(default_factory=set, exclude=True)
 
     # Persistent cross-round state
     seer_checks: dict[str, str] = Field(
@@ -90,6 +92,25 @@ class GameState(BaseModel):
     speeches: list[dict[str, str]] = Field(default_factory=list)  # Player speeches
     speech_order: list[str] = Field(default_factory=list)  # Player IDs in speaking order
     ai_speaking: bool = False  # True = background task is generating AI speeches
+
+    # === Multi-human barrier ack state ===
+    # Identities that have acknowledged the NIGHT→DAY transition this round.
+    # Phase advances only when this set equals alive_human_identities.
+    morning_acks: set[str] = Field(default_factory=set, exclude=True)
+    # Identities that have acknowledged the DAY→NIGHT transition this round.
+    night_acks: set[str] = Field(default_factory=set, exclude=True)
+    # Current speaker's player_id during DAY_DISCUSSION (turn token).
+    # None means discussion hasn't started or has ended.
+    current_speaker_id: str | None = None
+    # Pending werewolf-kill intents from human wolves, keyed by identity →
+    # target player_id. The kill only commits when every alive human wolf
+    # has submitted; a random choice breaks ties. AI wolves contribute via
+    # `wolf_ai_suggestion`. Reset at round boundary.
+    wolf_kill_intents: dict[str, str] = Field(default_factory=dict, exclude=True)
+    # Identities of dead humans who have clicked "观看投票" this round.
+    # Only used when every human is dead (pure spectator mode) — gates
+    # /ai-vote so one spectator's click doesn't race past the other.
+    vote_watch_acks: set[str] = Field(default_factory=set, exclude=True)
 
     # Deferred winner: set by prefetch when game ends inside background task.
     # NOT exposed in API responses (game_state_response builds response manually).
@@ -118,6 +139,31 @@ class GameState(BaseModel):
     def alive_players(self) -> list[Player]:
         """Get list of alive players."""
         return [p for p in self.players if p.alive]
+
+    @property
+    def alive_human_identities(self) -> set[str]:
+        """Set of identities whose human player is still alive.
+
+        Used as the quorum for morning/night acks. When a human dies, they
+        are removed from the quorum — dead players can't (and shouldn't need
+        to) ack phase transitions.
+        """
+        return {p.identity for p in self.alive_players if p.is_human and p.identity}
+
+    @property
+    def ack_quorum_identities(self) -> set[str]:
+        """Quorum set for phase-transition acks.
+
+        Normally the living humans. BUT when every human is dead (pure
+        spectator mode), we still want all of them to click through the
+        transition so the game doesn't race ahead while one spectator is
+        still reading the vote results. In that case the quorum falls back
+        to every human who was ever seated (`human_identities`).
+        """
+        alive = self.alive_human_identities
+        if alive:
+            return alive
+        return set(self.human_identities)
 
     @property
     def alive_werewolves(self) -> list[Player]:
@@ -168,3 +214,8 @@ class GameState(BaseModel):
         self.votes = {}
         self.speeches = []
         self.speech_order = []
+        self.morning_acks = set()
+        self.night_acks = set()
+        self.current_speaker_id = None
+        self.wolf_kill_intents = {}
+        self.vote_watch_acks = set()
