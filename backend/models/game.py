@@ -107,6 +107,20 @@ class GameState(BaseModel):
     # has submitted; a random choice breaks ties. AI wolves contribute via
     # `wolf_ai_suggestion`. Reset at round boundary.
     wolf_kill_intents: dict[str, str] = Field(default_factory=dict, exclude=True)
+    # Pending night-action intents from humans occupying solo roles (seer,
+    # guard, witch). Stored when a human clicks their action button BEFORE
+    # the night-ack quorum is met, so the click doesn't appear to "do
+    # nothing". The intent is replayed once quorum is reached via
+    # /enter-night → _replay_night_intents. Reset at round boundary.
+    seer_check_intents: dict[str, str] = Field(default_factory=dict, exclude=True)
+    guard_protect_intents: dict[str, str | None] = Field(default_factory=dict, exclude=True)
+    # Witch intent stores full sub-action shape:
+    # {"use_save": bool, "use_poison": bool, "poison_target_id": str | None}
+    witch_action_intents: dict[str, dict] = Field(default_factory=dict, exclude=True)
+    # Pending vote intent (pre-submit). Stored when a human selects a vote
+    # target before clicking confirm — not used yet by backend, reserved for
+    # future two-step confirm UI.
+    vote_intents: dict[str, str] = Field(default_factory=dict, exclude=True)
     # Identities of dead humans who have clicked "观看投票" this round.
     # Only used when every human is dead (pure spectator mode) — gates
     # /ai-vote so one spectator's click doesn't race past the other.
@@ -117,6 +131,13 @@ class GameState(BaseModel):
     # Revealed when the dead player reaches advance-night, preserving suspense.
     deferred_winner: str | None = None
     deferred_events: list[GameEvent] = Field(default_factory=list)
+    # When a hunter dies at night, we defer the `morning_death` announcement
+    # until the hunter finishes shooting, so the reveal lists BOTH the
+    # hunter's own death and the hunter's shot target together (matches
+    # traditional werewolf gameplay flow). This holds the original night
+    # dead_ids between /advance-night and /hunter-shoot. Cleared after the
+    # combined announcement fires.
+    pending_morning_dead_ids: list[str] | None = Field(default=None, exclude=True)
 
     class Config:
         arbitrary_types_allowed = True
@@ -218,4 +239,8 @@ class GameState(BaseModel):
         self.night_acks = set()
         self.current_speaker_id = None
         self.wolf_kill_intents = {}
+        self.seer_check_intents = {}
+        self.guard_protect_intents = {}
+        self.witch_action_intents = {}
+        self.vote_intents = {}
         self.vote_watch_acks = set()

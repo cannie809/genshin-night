@@ -343,12 +343,17 @@ class GameEngine:
     def vote_progress(self, game_state: GameState) -> tuple[int, int]:
         """Return (submitted, total) for the DAY_VOTE blind progress counter.
 
-        The UI only ever sees this aggregate, never individual votes, to
-        prevent vote-buying and social pressure during the submission window.
+        Counts ONLY alive humans — AI votes are prefetched during
+        discussion but deliberately not applied to `game.votes` until
+        every alive human has voted, so showing total=all_alive would
+        make AIs look like they "haven't voted" when really they're
+        just queued behind the human quorum gate. Counting humans only
+        makes the counter mean what users expect: "how many of us have
+        submitted?".
         """
-        alive = game_state.alive_players
-        total = len(alive)
-        submitted = sum(1 for p in alive if p.id in game_state.votes)
+        alive_humans = [p for p in game_state.alive_players if p.is_human]
+        total = len(alive_humans)
+        submitted = sum(1 for p in alive_humans if p.id in game_state.votes)
         return submitted, total
 
     def next_phase(self, game_state: GameState) -> GamePhase:

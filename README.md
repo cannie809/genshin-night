@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white" alt="React"/>
   <img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" alt="FastAPI"/>
   <img src="https://img.shields.io/badge/tests-93_passed-brightgreen?logo=pytest&logoColor=white" alt="Tests"/>
-  <img src="https://img.shields.io/badge/version-2.0.0-purple" alt="Version"/>
+  <img src="https://img.shields.io/badge/version-2.0.1-purple" alt="Version"/>
 </p>
 
 ---
@@ -140,11 +140,11 @@ docker run -d -p 8000:8000 --env-file .env.local genshin-night
 
 ### 🔄 局内学习：Reflection Pipeline
 
-每轮结束后，存活 AI 自动运行 Generator → Reflector → Curator 三步反思。采用**增量 delta 更新**（受 [ACE](https://arxiv.org/abs/2510.04618) 论文启发），而非让 LLM 重写整个知识文件。每条策略带有效用追踪——有效策略权重上升，无效策略自动衰减。
+每轮结束后，存活 AI 自动运行 Generator → Reflector → Curator 三步反思，采用**增量 delta 更新**而非让 LLM 重写整个知识文件。每条策略带有效用追踪——有效策略权重上升，无效策略自动衰减。
 
 ### 📈 跨局进化：PlayerProfiler
 
-基于 SQLite 的人类玩家行为画像系统。每局结束后，自动分析旅行者（人类玩家）的发言、投票和夜间行为，按胜/负、合作/对抗视角分类存入数据库（受 [ReasoningBank](https://arxiv.org/abs/2509.25140) 论文启发），并通过无训练 RL 动态衰减或强化历史记录。AI 回合时按角色和阶段选择性加载相关观察——**为每一位旅行者量身打造**。
+基于 SQLite 的人类玩家行为画像系统。每局结束后，自动分析旅行者（人类玩家）的发言、投票和夜间行为，按胜/负、合作/对抗视角分类存入数据库，并通过无训练 RL 动态衰减或强化历史记录。AI 回合时按角色和阶段选择性加载相关观察——**为每一位旅行者量身打造**。
 
 ---
 
@@ -195,6 +195,18 @@ pytest tests/test_api.py::test_root
 ## 📝 更新日志
 
 <details open>
+<summary><b>v2.0.1</b> (2026-04-20) — 🛠️ 多人模式体验打磨</summary>
+
+- ✅ 夜间技能支持"预选"：等对方进入夜晚前即可先锁定目标，可覆盖可等待
+- ✅ 出局玩家界面改为被动观战态，不再出现点了没反应的按钮
+- ✅ 投票进度条分母改为只算真人玩家
+- ✅ 房主「返回房间」直接进入设置页，去掉中间的「再来一局」
+- 🐛 修复猎人夜死时天亮公告先于开枪播报
+- 🐛 修复双人全出局后胜负条件不触发、游戏继续推进
+- 🐛 修复 AI 发言偶尔引用尚未发言玩家的上下文污染
+</details>
+
+<details>
 <summary><b>v2.0.0</b> (2026-04-20) — 👥 多人房间模式</summary>
 
 - ✅ 支持双人联机：8 间独立房间，每间容纳 1-2 名真人玩家（其余由 AI 补齐到 6 人局）

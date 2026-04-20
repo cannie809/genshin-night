@@ -282,8 +282,12 @@ def test_s3_vote_waits_for_all_humans(client):
     # `total` in vote_progress reflects all alive voters (humans + AI),
     # matching the engine's blind counter semantics. UI renders "已投票 N/M"
     # without distinguishing who the voters are.
+    # vote_progress counts alive humans only (AI vote is prefetched but
+    # not applied to game.votes until all humans submit — counting AIs
+    # would make the UI show "2/6 (still missing AIs)" which is a lie).
     assert body["data"]["submitted"] == 1
-    assert body["data"]["total"] == len(g.alive_players)
+    alive_humans = [p for p in g.alive_players if p.is_human]
+    assert body["data"]["total"] == len(alive_humans)
     # Only Alice's vote recorded so far.
     assert alice_pid in g.votes
     assert bob_pid not in g.votes
@@ -325,7 +329,8 @@ def test_s3_vote_returns_blind_progress_in_state(client):
     )
     body = r.json()
     assert body["vote_submitted"] == 1
-    assert body["vote_total"] == len(g.alive_players)
+    alive_humans = [p for p in g.alive_players if p.is_human]
+    assert body["vote_total"] == len(alive_humans)
     assert not any(e["type"] == "vote_result" for e in body["events"])
 
 
@@ -577,9 +582,11 @@ def test_mixed_wolves_seer_human_non_wolf_caller_preserves_human_turns(client):
     )
 
 
-def test_night_action_blocked_before_night_ack(client):
-    """A human action during NIGHT_* must be refused with 409
-    WAITING_NIGHT_ACK if any alive human hasn't called /enter-night yet."""
+def test_night_action_pending_before_night_ack(client):
+    """A human action during NIGHT_* before every human has called
+    /enter-night must be stored as a pending intent (HTTP 200 with
+    pending=true payload) rather than a 409. The intent auto-fires
+    when /enter-night completes quorum."""
     alice, bob, game_id, state = _create_two_human_room(client)
     alice_pid = _find_human_player_id(state, alice)
     bob_pid = _find_human_player_id(state, bob)
@@ -603,8 +610,16 @@ def test_night_action_blocked_before_night_ack(client):
         },
         headers=_auth(alice),
     )
-    assert r.status_code == 409, r.text
-    assert r.json()["detail"]["code"] == "WAITING_NIGHT_ACK"
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["success"] is True
+    assert body["data"]["pending"] is True
+    assert body["data"]["reason"] == "WAITING_NIGHT_ACK"
+    assert body["data"]["action_type"] == "werewolf_kill"
+    assert body["data"]["target_id"] == target_id
+    # Intent must be stored so /enter-night can replay it.
+    alice_identity = g.get_player_by_id(alice_pid).identity
+    assert g.wolf_kill_intents.get(alice_identity) == target_id
 
     # After both humans ack night, the action is allowed.
     client.post(
@@ -630,6 +645,130 @@ def test_night_action_blocked_before_night_ack(client):
     # Alice alone submitted — she's the lone wolf in this test; kill commits.
     # But the action must NOT 409 anymore.
     assert r.status_code == 200, r.text
+
+
+def test_enter_night_replays_seer_intent(client):
+    """Pre-quorum seer_check click is stored, then /enter-night replays
+    it when the second human ack completes quorum. No re-click needed."""
+    alice, bob, game_id, state = _create_two_human_room(client)
+    alice_pid = _find_human_player_id(state, alice)
+    bob_pid = _find_human_player_id(state, bob)
+
+    from backend.app import games
+    from backend.models import GamePhase
+
+    g = games[game_id]
+    alice_player = g.get_player_by_id(alice_pid)
+    alice_player.role = "seer"
+    # Pin everyone else to non-seer roles so the replay path is deterministic.
+    for p in g.players:
+        if p.id == alice_pid:
+            continue
+        if p.role == "seer":
+            p.role = "villager"
+    g.phase = GamePhase.NIGHT_SEER
+
+    # Pick a target that's alive and not alice herself.
+    target_id = next(p.id for p in g.alive_players if p.id != alice_pid)
+
+    # Alice clicks her seer_check BEFORE either human has ack'd /enter-night.
+    r = client.post(
+        "/api/game/night-action",
+        json={
+            "game_id": game_id,
+            "player_id": alice_pid,
+            "action_type": "seer_check",
+            "target_id": target_id,
+        },
+        headers=_auth(alice),
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["pending"] is True
+    assert g.seer_check_intents[alice_player.identity] == target_id
+    # Engine must NOT have committed the check yet.
+    assert g.seer_checked is None
+
+    # Alice acks /enter-night → still waiting on Bob.
+    client.post(
+        "/api/game/enter-night",
+        json={"game_id": game_id, "player_id": alice_pid},
+        headers=_auth(alice),
+    )
+    assert g.seer_checked is None
+
+    # Bob acks → quorum reached → _replay_night_intents fires → seer commits.
+    client.post(
+        "/api/game/enter-night",
+        json={"game_id": game_id, "player_id": bob_pid},
+        headers=_auth(bob),
+    )
+    assert g.seer_checked == target_id
+    # Phase should have advanced past NIGHT_SEER.
+    assert g.phase != GamePhase.NIGHT_SEER
+
+
+def test_night_action_after_replay_is_idempotent_noop(client):
+    """If a human re-clicks their role button after /enter-night has
+    already replayed the stored intent, the second click must be a
+    no-op — not a double-commit that advances the phase twice."""
+    alice, bob, game_id, state = _create_two_human_room(client)
+    alice_pid = _find_human_player_id(state, alice)
+    bob_pid = _find_human_player_id(state, bob)
+
+    from backend.app import games
+    from backend.models import GamePhase
+
+    g = games[game_id]
+    g.get_player_by_id(alice_pid).role = "seer"
+    for p in g.players:
+        if p.id == alice_pid:
+            continue
+        if p.role == "seer":
+            p.role = "villager"
+    g.phase = GamePhase.NIGHT_SEER
+
+    target_id = next(p.id for p in g.alive_players if p.id != alice_pid)
+    # Pre-quorum click stores intent.
+    client.post(
+        "/api/game/night-action",
+        json={
+            "game_id": game_id,
+            "player_id": alice_pid,
+            "action_type": "seer_check",
+            "target_id": target_id,
+        },
+        headers=_auth(alice),
+    )
+    # Complete quorum → replay fires.
+    client.post(
+        "/api/game/enter-night",
+        json={"game_id": game_id, "player_id": alice_pid},
+        headers=_auth(alice),
+    )
+    client.post(
+        "/api/game/enter-night",
+        json={"game_id": game_id, "player_id": bob_pid},
+        headers=_auth(bob),
+    )
+    phase_after_replay = g.phase
+    seer_checked_after_replay = g.seer_checked
+
+    # Alice clicks again — should be recognised as stale and return no-op.
+    r = client.post(
+        "/api/game/night-action",
+        json={
+            "game_id": game_id,
+            "player_id": alice_pid,
+            "action_type": "seer_check",
+            "target_id": target_id,
+        },
+        headers=_auth(alice),
+    )
+    assert r.status_code == 200
+    assert r.json()["data"].get("already_processed") is True
+    # Phase and seer_checked must not move.
+    assert g.phase == phase_after_replay
+    assert g.seer_checked == seer_checked_after_replay
 
 
 # ---------------------- Dead player can't skip vote ----------------------

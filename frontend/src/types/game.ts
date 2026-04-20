@@ -26,6 +26,31 @@ export interface GameEvent {
   data?: Record<string, any>
 }
 
+// Caller's own pending night-action intent (Option B barrier). Surfaced by
+// backend ONLY to the submitter — never leaks other players' pending
+// targets. Goes back to null once `/enter-night` quorum is met and the
+// backend auto-replays the stored intent (phase advances naturally).
+export type CallerNightIntentKind =
+  | 'seer_check'
+  | 'guard_protect'
+  | 'witch_action'
+  | 'wolf_kill'
+
+export interface WitchIntentDetail {
+  use_save: boolean
+  use_poison: boolean
+  poison_target_id: string | null
+}
+
+export interface CallerNightIntent {
+  kind: CallerNightIntentKind
+  // null = skip (guard 空守, witch no-op). For witch, this mirrors
+  // detail.poison_target_id for convenience.
+  target_id: string | null
+  // Present only when kind === 'witch_action'.
+  detail?: WitchIntentDetail
+}
+
 export interface GameState {
   game_id: string
   mode: string
@@ -61,6 +86,17 @@ export interface GameState {
   wolf_kill_submitted: number
   wolf_kill_total: number
   caller_wolf_kill_submitted: boolean
+  // Caller's own pending night-action intent under the Option B barrier.
+  // Null when there is no pending intent for this caller (either because
+  // they haven't clicked, or quorum was met and the intent was replayed).
+  caller_night_intent?: CallerNightIntent | null
+  // Pure-spectator vote-watch barrier (all humans dead). Shows whether
+  // this caller has acked "观看投票" and how many total spectators have
+  // so the first clicker gets "已观看，等待 X" feedback instead of a
+  // button that looks unchanged.
+  caller_vote_watch_acked?: boolean
+  vote_watch_submitted?: number
+  vote_watch_total?: number
 }
 
 // Request types
@@ -90,8 +126,32 @@ export interface SpeechRequest {
   player_id: string
 }
 
+// Night-action responses under Option B carry a richer `data` payload:
+// - pending intent (waiting on other humans' /enter-night acks)
+// - already-processed no-op (intent was already replayed by /enter-night)
+// - legacy `waiting` flag used by the wolf-kill intent barrier
+// Any other endpoint may still stuff arbitrary fields in here.
+export interface ActionResultData {
+  // Option B: intent stored, quorum not yet met.
+  pending?: boolean
+  reason?: string
+  action_type?: string
+  target_id?: string | null
+  waiting_for?: string[]
+  acked?: number
+  needed?: number
+  // Idempotent re-click after quorum-met-and-intent-replayed.
+  already_processed?: boolean
+  current_phase?: string
+  // Existing human-wolf intent barrier flag.
+  waiting?: boolean
+  // Allow forward-compatible extra fields without losing type safety
+  // at call sites that know what they're looking for.
+  [key: string]: unknown
+}
+
 export interface ActionResult {
   success: boolean
   message: string
-  data: any
+  data: ActionResultData
 }

@@ -98,13 +98,22 @@ export function GameBoard() {
     }
   }
 
-  // "返回房间" is a passive drop-back into RoomView for everyone (host
-  // and guest alike). The room stays in FINISHED until whoever is the
-  // current host clicks 再来一局 from RoomView. If the original host left
-  // via 返回大厅, the next-earliest member is auto-promoted to host by
-  // the backend's leave_room logic — so a guest returning later can
-  // correctly see the host controls and restart the room themselves.
-  const handleReturnRoom = () => {
+  // "返回房间": host auto-restarts the room so the landing page is the
+  // setup screen (mode/role picker), skipping the old "再来一局" in-between.
+  // Guests just drop back; they'll see the setup page as soon as the host
+  // triggers the restart. Non-host restart attempts will be refused by
+  // the backend ("only host can restart"), which we silently tolerate so
+  // both roles can share this handler.
+  const handleReturnRoom = async () => {
+    if (currentRoomId) {
+      try {
+        await roomApi.restart(currentRoomId)
+      } catch (err) {
+        // Expected for non-host; other errors are non-fatal here — the
+        // user just lands in the finished-room view and can retry.
+        console.debug('[GameBoard] restart skipped:', err)
+      }
+    }
     setGameState(null)
   }
 

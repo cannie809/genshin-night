@@ -271,9 +271,83 @@ class GameStateResponse(BaseModel):
     wolf_kill_submitted: int = 0
     wolf_kill_total: int = 0
     caller_wolf_kill_submitted: bool = False
+    # Caller's own pending night-action intent. Populated when the caller
+    # clicked a role button BEFORE night-ack quorum was reached; backend
+    # stored the intent and will replay it when /enter-night completes
+    # quorum. Lets the UI render "已选 X · 等待 Y 进入夜晚" instead of the
+    # confusing "button click did nothing" state.
+    #   kind: "seer_check" | "guard_protect" | "witch_action" | "wolf_kill"
+    #   target_id: str | None  (None for skip)
+    #   detail: dict | None    (witch sub-action fields when applicable)
+    caller_night_intent: dict | None = None
+    # Pure-spectator vote-watch barrier (all humans dead). Each dead human
+    # ack's "观看投票" before vote resolution runs. Without these fields
+    # the first clicker's UI kept showing the live button and the click
+    # appeared to do nothing — now we surface that their ack was recorded
+    # and they're waiting on the other spectator.
+    caller_vote_watch_acked: bool = False
+    vote_watch_submitted: int = 0
+    vote_watch_total: int = 0
 
 
 # === Utility Functions ===
+
+
+def _reveal_deferred_winner_if_any(game: GameState) -> bool:
+    """Commit a pending deferred winner into the live game state.
+
+    The prefetch path sets `deferred_winner` when victory triggers during
+    background night processing, counting on /advance-night to reveal it.
+    But /advance-night isn't called once phase is DAY_DISCUSSION — so any
+    entry point the dead player DOES hit (state poll, enter-day,
+    advance-discussion) must also check. Returns True if a reveal fired.
+    """
+    if game.deferred_winner and not game.winner:
+        game.phase = GamePhase.GAME_END
+        game.winner = game.deferred_winner
+        game.events.extend(game.deferred_events)
+        game.deferred_winner = None
+        game.deferred_events = []
+        log.info(f"[DeferredReveal] revealed winner={game.winner}")
+        return True
+    return False
+
+
+def _emit_morning_announcement(
+    game: GameState, dead_ids: list[str], hunter_shot_target_name: str | None = None
+) -> None:
+    """Emit the morning reveal event. When the hunter dies at night and
+    then shoots, we include the hunter's shot target in the SAME
+    announcement — matching traditional werewolf flow where sunrise
+    reveals all night casualties at once, not one before the hunter's
+    trigger pull.
+    """
+    names: list[str] = []
+    for did in dead_ids:
+        p = game.get_player_by_id(did)
+        if p:
+            names.append(p.name)
+    if hunter_shot_target_name:
+        names.append(hunter_shot_target_name)
+    if names:
+        game.events.append(
+            GameEvent(
+                type="morning_death",
+                round=game.round_number,
+                phase="DAY_DISCUSSION",
+                message=f"昨晚倒牌: {', '.join(names)}",
+            )
+        )
+    else:
+        game.events.append(
+            GameEvent(
+                type="morning_safe",
+                round=game.round_number,
+                phase="DAY_DISCUSSION",
+                message="昨晚是平安夜，无人倒牌",
+            )
+        )
+    game.day_number += 1
 
 
 def _add_wolf_collab_events(game: GameState, collab: dict) -> None:
@@ -452,6 +526,34 @@ def game_state_response(game: GameState, requesting_player_id: str = "player_0")
     caller_wolf_kill_submitted = bool(
         caller_identity and caller_identity in game.wolf_kill_intents
     )
+
+    # Caller's own pending night-action intent (if any). Only exposed to
+    # the submitter — never leaks another player's pending target.
+    caller_night_intent: dict | None = None
+    if caller_identity and requesting_player and requesting_player.is_human:
+        if caller_identity in game.wolf_kill_intents:
+            caller_night_intent = {
+                "kind": "wolf_kill",
+                "target_id": game.wolf_kill_intents[caller_identity],
+            }
+        elif caller_identity in game.seer_check_intents:
+            caller_night_intent = {
+                "kind": "seer_check",
+                "target_id": game.seer_check_intents[caller_identity],
+            }
+        elif caller_identity in game.guard_protect_intents:
+            caller_night_intent = {
+                "kind": "guard_protect",
+                "target_id": game.guard_protect_intents[caller_identity],
+            }
+        elif caller_identity in game.witch_action_intents:
+            detail = game.witch_action_intents[caller_identity]
+            caller_night_intent = {
+                "kind": "witch_action",
+                "target_id": detail.get("poison_target_id"),
+                "detail": detail,
+            }
+
     return GameStateResponse(
         game_id=game.game_id,
         mode=game.mode,
@@ -506,6 +608,14 @@ def game_state_response(game: GameState, requesting_player_id: str = "player_0")
         wolf_kill_submitted=wolf_kill_submitted,
         wolf_kill_total=wolf_kill_total,
         caller_wolf_kill_submitted=caller_wolf_kill_submitted,
+        caller_night_intent=caller_night_intent,
+        caller_vote_watch_acked=bool(
+            caller_identity and caller_identity in game.vote_watch_acks
+        ),
+        vote_watch_submitted=len(game.vote_watch_acks & game.human_identities),
+        vote_watch_total=len(game.human_identities)
+        if not alive_human_total
+        else 0,
     )
 
 
@@ -595,11 +705,105 @@ async def get_game_state(game_id: str, player_id: str = "player_0"):
         Current game state
     """
     game = get_game(game_id)
+    # Reveal any deferred winner that background prefetch committed while
+    # the caller was dead — otherwise the dead player's polling would
+    # never see game_end because /advance-night (the classic reveal path)
+    # isn't triggered from DAY_DISCUSSION.
+    _reveal_deferred_winner_if_any(game)
     # Flip the owning room to FINISHED once the game has a winner, so that
     # RoomView can tell the difference between "still playing" and "play
     # again" without inspecting GameState itself.
     await _maybe_finish_room(game)
     return game_state_response(game, requesting_player_id=player_id)
+
+
+def _store_night_intent_pending(
+    game: GameState,
+    player: Player,
+    req: "NightActionRequest",
+    missing: set[str],
+    quorum: set[str],
+) -> ActionResult:
+    """Store a human's pre-quorum night-action intent and return a pending result.
+
+    Called when a human clicks a role skill before every alive human has
+    ack'd "进入夜晚". Rather than rejecting with 409 (which makes the
+    button look broken), we record the intent in the role-specific intent
+    dict. /enter-night will replay these intents once quorum is reached.
+
+    Re-clicking overwrites the stored intent, so the UI naturally supports
+    changing one's mind. The pending response carries `waiting_for` display
+    names + ack progress so the UI can render a helpful waiting banner.
+    """
+    identity = player.identity
+    if not identity:
+        raise HTTPException(status_code=400, detail={"code": "MISSING_IDENTITY"})
+    action = req.action_type
+    if action == "werewolf_kill":
+        if player.role != "werewolf":
+            raise HTTPException(status_code=403, detail={"code": "NOT_A_WOLF"})
+        if not req.target_id:
+            raise HTTPException(
+                status_code=400, detail="target_id required for werewolf_kill"
+            )
+        game.wolf_kill_intents[identity] = req.target_id
+    elif action == "seer_check":
+        if player.role != "seer":
+            raise HTTPException(status_code=403, detail={"code": "NOT_A_SEER"})
+        if not req.target_id:
+            raise HTTPException(status_code=400, detail="target_id required for seer_check")
+        game.seer_check_intents[identity] = req.target_id
+    elif action == "guard_action":
+        if player.role != "guard":
+            raise HTTPException(status_code=403, detail={"code": "NOT_A_GUARD"})
+        # target_id=None means 空守 (skip) — store it too.
+        if req.target_id and req.target_id == game.last_guarded_player:
+            raise HTTPException(status_code=400, detail="不能连续两晚守护同一人")
+        game.guard_protect_intents[identity] = req.target_id
+    elif action == "witch_action":
+        if player.role != "witch":
+            raise HTTPException(status_code=403, detail={"code": "NOT_A_WITCH"})
+        game.witch_action_intents[identity] = {
+            "use_save": bool(req.use_save),
+            "use_poison": bool(req.use_poison),
+            "poison_target_id": req.poison_target_id,
+        }
+    else:
+        # morning and other meta actions: no intent semantics, just block.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "WAITING_NIGHT_ACK",
+                "missing": list(missing),
+                "night_acks": len(game.night_acks),
+                "night_acks_needed": len(quorum),
+            },
+        )
+
+    waiting_for_names: list[str] = []
+    for p in game.alive_players:
+        if p.is_human and p.identity in missing:
+            waiting_for_names.append(p.display_name or p.name)
+
+    log.info(
+        "[night_action] PENDING: player=%s action=%s stored intent, waiting on %s",
+        player.name,
+        action,
+        missing,
+    )
+    return ActionResult(
+        success=True,
+        message="已锁定意图，等待其他玩家进入夜晚",
+        data={
+            "pending": True,
+            "reason": "WAITING_NIGHT_ACK",
+            "action_type": action,
+            "target_id": req.target_id,
+            "waiting_for": waiting_for_names,
+            "acked": len(game.night_acks),
+            "needed": len(quorum),
+        },
+    )
 
 
 @app.post("/api/game/night-action", response_model=ActionResult)
@@ -618,26 +822,43 @@ async def night_action(req: NightActionRequest):
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
 
-    # Night-barrier gate: a human-initiated action before all humans have
-    # ack'd "进入夜晚" must be refused. AI-initiated calls (internal
-    # prefetch, auto-advance) bypass this because they're server-side.
+    # Night-barrier gate: if not every alive human has ack'd "进入夜晚" yet,
+    # the click cannot commit. Instead of returning a 409 (which made the
+    # button appear broken — click seemed to do nothing, then auto-fired
+    # later), we STORE the intent and return 200 with a pending-state
+    # payload so the UI can render "已选 X · 等待 Y 进入夜晚". The intent
+    # is replayed in /enter-night once quorum is met. AI-initiated calls
+    # (internal prefetch, auto-advance) bypass this because they're
+    # server-side.
     if player.is_human:
         quorum = game.ack_quorum_identities
         missing = quorum - game.night_acks
         if missing:
+            return _store_night_intent_pending(game, player, req, missing, quorum)
+        # Idempotency: a human's pre-quorum intent may have already been
+        # replayed by /enter-night. If so, the corresponding phase has
+        # advanced and any re-click from the same identity is a no-op.
+        # Return a "already processed" result rather than letting
+        # process_night_* run again and double-advance the phase.
+        action_phase_map = {
+            "seer_check": GamePhase.NIGHT_SEER,
+            "guard_action": GamePhase.NIGHT_GUARD,
+            "witch_action": GamePhase.NIGHT_WITCH,
+            "werewolf_kill": GamePhase.NIGHT_WEREWOLF,
+        }
+        expected_phase = action_phase_map.get(req.action_type)
+        if expected_phase and game.phase != expected_phase:
             log.info(
-                "[night_action] blocking human action=%s until night-ack quorum (missing=%s)",
+                "[night_action] stale click action=%s player=%s — phase=%s expected=%s; no-op",
                 req.action_type,
-                missing,
+                player.name,
+                game.phase.value,
+                expected_phase.value,
             )
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "WAITING_NIGHT_ACK",
-                    "missing": list(missing),
-                    "night_acks": len(game.night_acks),
-                    "night_acks_needed": len(quorum),
-                },
+            return ActionResult(
+                success=True,
+                message="操作已生效",
+                data={"already_processed": True, "current_phase": game.phase.value},
             )
 
     log.info(f"[Night] action={req.action_type} player={player.name}({player.role}) target={req.target_id}")
@@ -1615,28 +1836,10 @@ async def _prefetch_night_actions(game: GameState, human: Player):
     # Dead player: handle morning + chain speech/vote prefetch
     if not human.alive and game.phase == GamePhase.DAY_DISCUSSION:
         dead_ids = game_engine.process_morning(game)
-        dead_names = [game.get_player_by_id(did).name for did in dead_ids if game.get_player_by_id(did)]
-        if dead_names:
-            game.events.append(
-                GameEvent(
-                    type="morning_death",
-                    round=game.round_number,
-                    phase="DAY_DISCUSSION",
-                    message=f"昨晚倒牌: {', '.join(dead_names)}",
-                )
-            )
-        else:
-            game.events.append(
-                GameEvent(
-                    type="morning_safe",
-                    round=game.round_number,
-                    phase="DAY_DISCUSSION",
-                    message="昨晚是平安夜，无人倒牌",
-                )
-            )
-        game.day_number += 1
 
-        # Handle hunter death at night (must be AI since human is already dead)
+        # Mirror the /advance-night flow: if hunter died at night, defer
+        # the morning reveal until after the AI hunter shoots, so the
+        # dead-player view also sees both names at once.
         hunter_dead = next(
             (
                 game.get_player_by_id(did)
@@ -1645,6 +1848,7 @@ async def _prefetch_night_actions(game: GameState, human: Player):
             ),
             None,
         )
+        hunter_shot_target_name: str | None = None
         if hunter_dead and not hunter_dead.is_human:
             # NOTE: Do NOT set game.phase = HUNTER_SHOOT here.
             # This runs inside a prefetch coroutine while polling can read game state.
@@ -1653,6 +1857,11 @@ async def _prefetch_night_actions(game: GameState, human: Player):
             target_name = await loop.run_in_executor(None, ai_agent.hunter_shoot, hunter_dead, game)
             target = game.get_player_by_name(target_name) if target_name else None
             game_engine.process_hunter_shoot(game, target.id if target else None)
+            hunter_shot_target_name = target.name if target else None
+
+        _emit_morning_announcement(game, dead_ids, hunter_shot_target_name)
+
+        if hunter_dead and not hunter_dead.is_human:
             winner = check_victory(game)
             if winner:
                 # Defer: don't set GAME_END now — let advance-night reveal it
@@ -1842,6 +2051,7 @@ async def enter_night(req: SpeechRequest, request: Request):
         raise HTTPException(
             status_code=403, detail={"code": "NOT_YOUR_SLOT", "your_player_id": caller.id}
         )
+    newly_reached_quorum = False
     if caller.identity in game.human_identities:
         try:
             quorum, acked, total = game_engine.record_ack(game, caller.identity, "night")
@@ -1853,9 +2063,148 @@ async def enter_night(req: SpeechRequest, request: Request):
                 total,
                 quorum,
             )
+            newly_reached_quorum = quorum
         except ValueError:
             log.warning("[enter_night] record_ack rejected identity=%s", caller.identity)
+
+    # When this ack completes the quorum, replay any human intents that
+    # were stored before quorum. This is what makes the pre-clicked
+    # seer/guard/witch/wolf-kill buttons "auto-fire" once everyone's in.
+    if newly_reached_quorum:
+        _replay_night_intents(game)
+
     return game_state_response(game, requesting_player_id=caller.id)
+
+
+def _replay_night_intents(game: GameState) -> None:
+    """Apply stored human night-action intents now that night-ack quorum is met.
+
+    Walks the four night phases in their canonical order. For each:
+      - If a living human holds the role AND every such human has
+        submitted an intent, commit it (same engine call the live
+        /night-action path would use) and advance phase.
+      - If a living human holds the role but not everyone has submitted
+        yet, STOP (the remaining humans still need to click — their
+        clicks will go through the fast path once they land since
+        quorum is now met).
+      - If no living human holds the role, leave phase alone — the AI
+        driver at /advance-night will handle it.
+    """
+    # Canonical phase order (matches engine.next_phase): GUARD → WEREWOLF
+    # → WITCH → SEER → DAY_DISCUSSION.
+    phase_order = [
+        (GamePhase.NIGHT_GUARD, "guard"),
+        (GamePhase.NIGHT_WEREWOLF, "werewolf"),
+        (GamePhase.NIGHT_WITCH, "witch"),
+        (GamePhase.NIGHT_SEER, "seer"),
+    ]
+    for phase, role in phase_order:
+        if game.phase != phase:
+            continue
+        humans_in_role = [
+            p for p in game.alive_players if p.role == role and p.is_human and p.identity
+        ]
+        if not humans_in_role:
+            # AI-only — /advance-night will drive this; don't touch.
+            break
+        if role == "werewolf":
+            # Wolf barrier: need every alive human wolf's intent before commit.
+            if not all(w.identity in game.wolf_kill_intents for w in humans_in_role):
+                log.info("[replay_intents] wolf role: not all human wolves submitted, stopping")
+                break
+            _commit_wolf_kill_from_intents(game, humans_in_role)
+            game_engine.next_phase(game)
+        elif role == "seer":
+            if not all(p.identity in game.seer_check_intents for p in humans_in_role):
+                log.info("[replay_intents] seer role: intent missing, stopping")
+                break
+            target_id = next(iter(game.seer_check_intents.values()))
+            target = game.get_player_by_id(target_id)
+            if target and target.alive:
+                game_engine.process_night_seer(game, target.id)
+                log.info("[replay_intents] seer committed: target=%s", target.name)
+            else:
+                log.warning("[replay_intents] seer intent target invalid or dead: %s", target_id)
+            game_engine.next_phase(game)
+        elif role == "guard":
+            if not all(p.identity in game.guard_protect_intents for p in humans_in_role):
+                log.info("[replay_intents] guard role: intent missing, stopping")
+                break
+            target_id = next(iter(game.guard_protect_intents.values()))
+            if target_id and target_id == game.last_guarded_player:
+                log.warning(
+                    "[replay_intents] guard intent violates consecutive-guard rule; treating as skip"
+                )
+                target_id = None
+            game_engine.process_night_guard(game, target_id)
+            log.info("[replay_intents] guard committed: target=%s", target_id or "(skip)")
+            game_engine.next_phase(game)
+        elif role == "witch":
+            if not all(p.identity in game.witch_action_intents for p in humans_in_role):
+                log.info("[replay_intents] witch role: intent missing, stopping")
+                break
+            intent = next(iter(game.witch_action_intents.values()))
+            game_engine.process_night_witch(
+                game,
+                use_save=intent.get("use_save", False),
+                use_poison=intent.get("use_poison", False),
+                poison_target_id=intent.get("poison_target_id"),
+            )
+            log.info("[replay_intents] witch committed: %s", intent)
+            game_engine.next_phase(game)
+
+
+def _commit_wolf_kill_from_intents(game: GameState, human_wolves: list[Player]) -> None:
+    """Commit the werewolf kill using stored intents (mirrors /night-action wolf path).
+
+    All human wolves' intents are pooled with the AI wolf's suggestion
+    (if any) and a random choice resolves the candidate list. Emits the
+    same werewolf_chat events as the live path for log parity.
+    """
+    candidate_ids: list[str] = [game.wolf_kill_intents[w.identity] for w in human_wolves]
+    ai_wolves = [w for w in game.alive_werewolves if not w.is_human]
+    if ai_wolves:
+        ai_sugg_name = game.wolf_ai_suggestion
+        ai_target = game.get_player_by_name(ai_sugg_name) if ai_sugg_name else None
+        if not ai_target:
+            log.warning("[replay_intents] no cached wolf_ai_suggestion; running fresh collab")
+            collab = ai_agent.werewolf_collaborate(game)
+            _add_wolf_collab_events(game, collab)
+            game.wolf_collab_result = collab
+            ai_target = game.get_player_by_name(collab.get("target"))
+        if ai_target:
+            candidate_ids.append(ai_target.id)
+
+    unique_candidates = list(dict.fromkeys(candidate_ids))
+    target_id = random.choice(unique_candidates)
+    target = game.get_player_by_id(target_id)
+    if not target:
+        log.error("[replay_intents] wolf commit: no valid target in %s", unique_candidates)
+        return
+    if len(unique_candidates) > 1:
+        picks_desc = ", ".join(
+            (game.get_player_by_id(cid).name if game.get_player_by_id(cid) else cid)
+            for cid in unique_candidates
+        )
+        game.events.append(
+            GameEvent(
+                type="werewolf_chat",
+                round=game.round_number,
+                phase="NIGHT_WEREWOLF",
+                message=f"🐺 候选目标: {picks_desc}，随机决定击杀 {target.name}",
+            )
+        )
+    else:
+        game.events.append(
+            GameEvent(
+                type="werewolf_chat",
+                round=game.round_number,
+                phase="NIGHT_WEREWOLF",
+                message=f"🐺 意见一致，击杀{target.name}",
+            )
+        )
+    game_engine.process_night_werewolf(game, target.id)
+    log.info("[replay_intents] wolf kill committed: target=%s", target.name)
 
 
 @app.post("/api/game/advance-discussion", response_model=GameStateResponse)
@@ -1895,6 +2244,65 @@ async def advance_discussion(req: SpeechRequest, request: Request):
         return game_state_response(game, requesting_player_id=caller.id)
 
     _ensure_speech_order(game)
+
+    # Adopt prefetched pre-human speeches if available. The prefetch was
+    # launched at the end of /advance-night (app.py /advance-night tail)
+    # and runs concurrently with this endpoint. If we don't adopt it here,
+    # BOTH paths mutate game.speeches / game.events in arbitrary order and
+    # speakers' prompts get contaminated with later speakers' content.
+    pre_human_ids = _get_pre_human_ids(game)
+    if pre_human_ids:
+        _existing_speech_names = {
+            ev.message.split("】")[0][1:]
+            for ev in game.events
+            if ev.type == "speech" and ev.round == game.round_number
+        }
+        cached = await prefetch.get_or_wait(
+            game.game_id, "pre_speeches", game.round_number, timeout=60.0
+        )
+        if cached:
+            for pid, speech, stickers in cached:
+                p = game.get_player_by_id(pid)
+                if not p:
+                    continue
+                # add_speech is idempotent-by-name (engine already dedups).
+                if not any(s["player"] == p.name for s in game.speeches):
+                    game_engine.add_speech(game, p.id, speech)
+                if p.name not in _existing_speech_names:
+                    game.events.append(
+                        GameEvent(
+                            type="speech",
+                            round=game.round_number,
+                            phase="DAY_DISCUSSION",
+                            message=f"【{p.name}】: {speech}",
+                            data=_build_sticker_data(p, stickers),
+                        )
+                    )
+            # Fast-forward current_speaker_id past the adopted speakers so
+            # the loop below won't regenerate them. The speaker token should
+            # land on either the first human, or past the end.
+            if game.current_speaker_id is None:
+                # Before any speech has happened, snap to the first entry so
+                # the while-loop below can advance through adopted speakers.
+                if game.speech_order:
+                    game.current_speaker_id = game.speech_order[0]
+            while (
+                game.current_speaker_id is not None
+                and game.current_speaker_id in pre_human_ids
+            ):
+                advance_speaker(game)
+        else:
+            # No silent fallback: the cache was missing or the prefetch
+            # task timed out / failed. Log loudly so the divergence is
+            # visible in production logs — then fall through to the
+            # existing synchronous regeneration loop below.
+            log.warning(
+                "[advance_discussion] pre_speeches prefetch cache miss for "
+                "round=%d game=%s; falling back to synchronous regeneration "
+                "(slower, may contaminate prompts).",
+                game.round_number,
+                game.game_id,
+            )
 
     # Safety cap to avoid runaway loops if something goes wrong.
     max_iterations = len(game.speech_order) + 1
@@ -2507,6 +2915,17 @@ async def hunter_shoot(req: NightActionRequest, request: Request):
         # Determine context: night death or vote death
         night_death = any(e.type == "hunter_death_night" for e in game.events)
 
+        # Night-death case: the morning announcement was DEFERRED at
+        # /advance-night so we could combine the hunter's shot target
+        # with the original night dead. Emit it now.
+        if night_death and game.pending_morning_dead_ids is not None:
+            _emit_morning_announcement(
+                game,
+                game.pending_morning_dead_ids,
+                target.name if target else None,
+            )
+            game.pending_morning_dead_ids = None
+
         # Check victory after hunter's shot
         winner = check_victory(game)
         log.info(f"[HunterShoot] check_victory={winner} night_death={night_death} phase_before={game.phase.value}")
@@ -2741,28 +3160,10 @@ async def advance_night(req: SpeechRequest, request: Request):
 
         if game.phase == GamePhase.DAY_DISCUSSION and not morning_already:
             dead_ids = game_engine.process_morning(game)
-            dead_names = [game.get_player_by_id(did).name for did in dead_ids if game.get_player_by_id(did)]
-            if dead_names:
-                game.events.append(
-                    GameEvent(
-                        type="morning_death",
-                        round=game.round_number,
-                        phase="DAY_DISCUSSION",
-                        message=f"昨晚倒牌: {', '.join(dead_names)}",
-                    )
-                )
-            else:
-                game.events.append(
-                    GameEvent(
-                        type="morning_safe",
-                        round=game.round_number,
-                        phase="DAY_DISCUSSION",
-                        message="昨晚是平安夜，无人倒牌",
-                    )
-                )
-            game.day_number += 1
 
-            # Check if hunter died at night → trigger HUNTER_SHOOT
+            # Check if hunter died at night → DEFER the morning announcement
+            # until after the hunter shoots, so the reveal lists both deaths
+            # at once.
             hunter_dead = next(
                 (
                     game.get_player_by_id(did)
@@ -2773,11 +3174,19 @@ async def advance_night(req: SpeechRequest, request: Request):
             )
             if hunter_dead:
                 game.phase = GamePhase.HUNTER_SHOOT
+                game.pending_morning_dead_ids = list(dead_ids)
                 if not hunter_dead.is_human:
                     # AI hunter: auto-shoot (may return None = hold fire)
                     target_name = ai_agent.hunter_shoot(hunter_dead, game)
                     target = game.get_player_by_name(target_name) if target_name else None
                     game_engine.process_hunter_shoot(game, target.id if target else None)
+                    # Now emit the combined morning announcement.
+                    _emit_morning_announcement(
+                        game,
+                        game.pending_morning_dead_ids,
+                        target.name if target else None,
+                    )
+                    game.pending_morning_dead_ids = None
                     # Check victory after hunter shot
                     winner = check_victory(game)
                     if winner:
@@ -2793,8 +3202,12 @@ async def advance_night(req: SpeechRequest, request: Request):
                         )
                     else:
                         game.phase = GamePhase.DAY_DISCUSSION
-                # Human hunter: leave phase as HUNTER_SHOOT, frontend handles it
+                # Human hunter: leave phase as HUNTER_SHOOT, /hunter-shoot
+                # will emit the combined announcement after the human picks.
                 return game_state_response(game, human.id)
+
+            # No hunter among the night dead — emit morning announcement now.
+            _emit_morning_announcement(game, dead_ids)
 
             # Check victory after night deaths
             winner = check_victory(game)
