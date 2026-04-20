@@ -117,7 +117,7 @@ export function GameBoard() {
           <div className="flex items-center gap-3">
             <Moon className="text-accent size-7" />
             <h1 className="font-display bg-gradient-to-r from-red-500 to-purple-400 bg-clip-text text-3xl font-bold tracking-wide text-transparent">
-              月圆之夜
+              原神之夜
             </h1>
           </div>
           <div className="flex items-center gap-3">

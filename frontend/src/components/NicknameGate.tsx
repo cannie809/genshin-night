@@ -30,7 +30,7 @@ export function NicknameGate() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <h1 className="font-display bg-gradient-to-b from-amber-200 via-yellow-100 to-amber-300 bg-clip-text text-4xl font-bold tracking-[0.15em] text-transparent">
-            月圆之夜
+            原神之夜
           </h1>
           <p className="font-display mt-2 text-sm tracking-[0.3em] text-amber-300/45">
             提瓦特的秘密
