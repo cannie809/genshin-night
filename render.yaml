@@ -8,8 +8,6 @@ services:
     envVars:
       - key: ALLOWED_ORIGINS
         sync: false
-      - key: PLAYER_KEYS
-        sync: false
       - key: LLM_PROVIDER
         sync: false
       - key: OPENROUTER_API_KEY
