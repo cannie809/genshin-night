@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white" alt="React"/>
   <img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" alt="FastAPI"/>
   <img src="https://img.shields.io/badge/tests-93_passed-brightgreen?logo=pytest&logoColor=white" alt="Tests"/>
-  <img src="https://img.shields.io/badge/version-2.3.0-purple" alt="Version"/>
+  <img src="https://img.shields.io/badge/version-2.0.0-purple" alt="Version"/>
 </p>
 
 ---
@@ -195,7 +195,7 @@ pytest tests/test_api.py::test_root
 ## 📝 更新日志
 
 <details open>
-<summary><b>v2.3.0</b> (2026-04-20) — 👥 多人房间模式</summary>
+<summary><b>v2.0.0</b> (2026-04-20) — 👥 多人房间模式</summary>
 
 - ✅ 支持双人联机：8 间独立房间，每间容纳 1-2 名真人玩家（其余由 AI 补齐到 6 人局）
 - ✅ 双人局随机分配「旅行者·空」与「旅行者·荧」两位身份，避免 AI 把你俩混为一人
@@ -208,24 +208,22 @@ pytest tests/test_api.py::test_root
 </details>
 
 <details>
-<summary><b>v2.2.0</b> (2026-03-26) — 🔒 安全与稳定性</summary>
+<summary><b>v1.9.3</b> (2026-03-26) — 🔒 安全与稳定性</summary>
 
 - ✅ 部署安全加固：静态资源路径遍历修复、CORS 策略收紧到可信来源
 - ✅ AI 回复更稳：加强了 LLM JSON 输出解析，遇到格式异常能自动修复而不是报错
 - ✅ 更好的自动化测试覆盖，保证回归不出错
-
-> 历史说明：v2.2.0 原定引入的"双人房间系统"最终被 v2.3.0 重写替换，本条目仅保留实际进入主线的安全与测试改进。
 </details>
 
 <details>
-<summary><b>v2.1.0</b> (2026-02-17) — 🚀 Docker 部署</summary>
+<summary><b>v1.9.2</b> (2026-02-17) — 🚀 Docker 部署</summary>
 
 - ✅ Docker 一体化打包（`Dockerfile` + `render.yaml`），支持 Render 一键部署
 - ✅ 每个账号的游戏记忆单独存储，互不干扰
 </details>
 
 <details>
-<summary><b>v2.0.0</b> (2026-02-16) — ⚡ 流畅度提升</summary>
+<summary><b>v1.9.1</b> (2026-02-16) — ⚡ 流畅度提升</summary>
 
 - ✅ 后台预计算：AI 会趁你思考的间隙提前想好下一步（夜间行动、白天发言、投票），你操作完几乎无需等待
 - ✅ 完整结算体验：哪怕游戏已经分出胜负，死亡玩家也能完整看完 夜晚→天亮→投票 的剧情过渡
